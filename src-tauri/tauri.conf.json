@@ -1,0 +1,57 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Glimpse",
+  "version": "1.0.0",
+  "identifier": "com.glimpse.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "bun run dev",
+    "beforeBuildCommand": "bun run build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Glimpse",
+        "url": "index.html",
+        "width": 1080,
+        "height": 720,
+        "resizable": true,
+        "fullscreen": false
+      },
+      {
+        "label": "mask-overlay",
+        "title": "Glimpse Mask",
+        "url": "index.html#overlay",
+        "width": 760,
+        "height": 520,
+        "resizable": true,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "shadow": false,
+        "visible": false,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

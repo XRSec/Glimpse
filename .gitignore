@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Production build output
+dist/
+dist-ssr/
+*.local
+
+# Tauri & Rust build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# macOS system files
+.DS_Store
+*.swp
+*~
+
+# IDE / Editor files
+.idea/
+.vscode/
+.claude/settings.local.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
