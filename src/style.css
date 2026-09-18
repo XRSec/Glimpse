@@ -12,7 +12,7 @@ html, body {
   width: 100%;
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  user-select: none;
+  user-select: auto;
   -webkit-font-smoothing: antialiased;
   background-color: transparent !important;
   background: transparent !important;
@@ -38,14 +38,96 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: #383430;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: #4d4742;
 }
 
 .transition-smooth {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mac-card {
+  background-color: #1e1b19;
+  border: 1px solid #332f2b;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04), 0 2px 8px 0 rgba(0, 0, 0, 0.2);
+}
+.mac-card-hover:hover {
+  background-color: #24211e;
+  border-color: #443e38;
+}
+.mac-button-primary {
+  background-color: #da7756;
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 2px 6px 0 rgba(218, 119, 86, 0.25);
+  transition: all 0.15s ease;
+}
+.mac-button-primary:hover {
+  background-color: #e28465;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.25), 0 3px 10px 0 rgba(218, 119, 86, 0.35);
+}
+.mac-button-secondary {
+  background-color: #262320;
+  border: 1px solid #383430;
+  color: #d4d4d8;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+  transition: all 0.15s ease;
+}
+.mac-button-secondary:hover {
+  background-color: #2d2925;
+  border-color: #4a443d;
+  color: #ffffff;
+}
+.mac-tag {
+  display: inline-flex;
+  align-items: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: #a1a1aa;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.mac-obsidian-card {
+  background-color: #151518;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+}
+.mac-obsidian-card-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mac-obsidian-card-hover:hover {
+  background-color: #1a1a1f;
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 12px 28px -4px rgba(0, 0, 0, 0.5);
+}
+.mac-pill-btn-primary {
+  background: linear-gradient(135deg, #e5856b 0%, #da7756 100%);
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.25), 0 2px 8px 0 rgba(218, 119, 86, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.15s ease;
+}
+.mac-pill-btn-primary:hover {
+  filter: brightness(1.08);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.3), 0 4px 14px 0 rgba(218, 119, 86, 0.45);
+}
+.mac-tag-capsule {
+  display: inline-flex;
+  align-items: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: #a1a1aa;
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 6px;
 }

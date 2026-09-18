@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Glimpse",
+  "productName": "Glimpse 灵眸",
   "version": "1.0.0",
-  "identifier": "com.glimpse.app",
+  "identifier": "com.xrsec.glimpse",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Glimpse",
+        "title": "Glimpse 灵眸自动化",
         "url": "index.html",
         "width": 1080,
         "height": 720,

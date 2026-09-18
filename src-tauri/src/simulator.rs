@@ -18,28 +18,74 @@ extern "C" {
     fn CFRelease(cf: *const std::ffi::c_void);
 }
 
+fn post_event(event: &CGEvent) {
+    event.post(CGEventTapLocation::HID);
+}
+
 pub fn click_at(x: f64, y: f64, button: &str) -> Result<(), String> {
+    if !crate::ocr::is_accessibility_trusted() {
+        return Err("Glimpse 未获得 macOS 辅助功能权限，无法派发鼠标事件。请在系统设置中授权。".to_string());
+    }
+
+    let is_right = button == "right";
+    let is_double = button == "double";
+
+    // 1. 确保蒙版窗口处于穿透状态
+    crate::ocr::ensure_mask_passthrough();
+
+    // 2. 仅左键/双击时激活目标窗口；右键不激活——激活会抢焦点导致上下文菜单被系统关闭
+    if !is_right {
+        let front = crate::ocr::get_frontmost_app_json();
+        let target = crate::ocr::get_app_at_point_json(x, y);
+        
+        let get_pid = |json: &str| -> Option<String> {
+            if let Some(pos) = json.find("\"pid\":") {
+                let start = pos + 6;
+                let rest = &json[start..];
+                let end = rest.find(',').unwrap_or_else(|| rest.find('}').unwrap_or(rest.len()));
+                Some(rest[..end].trim().to_string())
+            } else {
+                None
+            }
+        };
+        
+        let pid_front = get_pid(&front);
+        let pid_target = get_pid(&target);
+        let skip_activate = match (pid_front, pid_target) {
+            (Some(pf), Some(pt)) => pf == pt,
+            _ => false
+        };
+
+        if !skip_activate {
+            crate::ocr::activate_window_at(x, y);
+            sleep(Duration::from_millis(180));
+        }
+    }
+
     let point = CGPoint::new(x, y);
+
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .or_else(|_| CGEventSource::new(CGEventSourceStateID::CombinedSessionState))
         .map_err(|_| "创建 CGEventSource 失败".to_string())?;
 
-    // 1. 先将光标移动到位
+    // 3. 派发 MouseMoved 事件，确保系统与目标窗口光标及 Hover 状态完全同步
     if let Ok(move_event) = CGEvent::new_mouse_event(
         source.clone(),
         CGEventType::MouseMoved,
         point,
         CGMouseButton::Left,
     ) {
-        move_event.post(CGEventTapLocation::HID);
+        post_event(&move_event);
     }
-    sleep(Duration::from_millis(25));
+    sleep(Duration::from_millis(50));
 
-    let (down_type, up_type, mouse_btn) = match button {
-        "right" => (CGEventType::RightMouseDown, CGEventType::RightMouseUp, CGMouseButton::Right),
-        _ => (CGEventType::LeftMouseDown, CGEventType::LeftMouseUp, CGMouseButton::Left),
+    let (down_type, up_type, mouse_btn, btn_number) = if is_right {
+        (CGEventType::RightMouseDown, CGEventType::RightMouseUp, CGMouseButton::Right, 1i64)
+    } else {
+        (CGEventType::LeftMouseDown, CGEventType::LeftMouseUp, CGMouseButton::Left, 0i64)
     };
 
-    let clicks = if button == "double" { 2 } else { 1 };
+    let clicks = if is_double { 2 } else { 1 };
 
     for i in 1..=clicks {
         if let Ok(down_event) = CGEvent::new_mouse_event(source.clone(), down_type, point, mouse_btn) {
@@ -47,16 +93,24 @@ pub fn click_at(x: f64, y: f64, button: &str) -> Result<(), String> {
                 core_graphics::event::EventField::MOUSE_EVENT_CLICK_STATE,
                 i as i64,
             );
-            down_event.post(CGEventTapLocation::HID);
+            down_event.set_integer_value_field(
+                core_graphics::event::EventField::MOUSE_EVENT_BUTTON_NUMBER,
+                btn_number,
+            );
+            post_event(&down_event);
         }
-        sleep(Duration::from_millis(30));
+        sleep(Duration::from_millis(60));
 
         if let Ok(up_event) = CGEvent::new_mouse_event(source.clone(), up_type, point, mouse_btn) {
             up_event.set_integer_value_field(
                 core_graphics::event::EventField::MOUSE_EVENT_CLICK_STATE,
                 i as i64,
             );
-            up_event.post(CGEventTapLocation::HID);
+            up_event.set_integer_value_field(
+                core_graphics::event::EventField::MOUSE_EVENT_BUTTON_NUMBER,
+                btn_number,
+            );
+            post_event(&up_event);
         }
 
         if i < clicks {
@@ -64,11 +118,40 @@ pub fn click_at(x: f64, y: f64, button: &str) -> Result<(), String> {
         }
     }
 
+    if is_right {
+        // 右键弹出菜单需要等待系统/目标应用完成动画展开
+        sleep(Duration::from_millis(200));
+    } else {
+        sleep(Duration::from_millis(50));
+    }
+
     Ok(())
 }
 
 /// 拖动直线：从起点 (x1, y1) 直线拖拽到终点 (x2, y2)，耗时 duration_secs 秒
 pub fn drag_line(x1: f64, y1: f64, x2: f64, y2: f64, duration_secs: f64) -> Result<(), String> {
+    crate::ocr::ensure_mask_passthrough();
+    let front = crate::ocr::get_frontmost_app_json();
+    let target = crate::ocr::get_app_at_point_json(x1, y1);
+    let get_pid = |json: &str| -> Option<String> {
+        if let Some(pos) = json.find("\"pid\":") {
+            let start = pos + 6;
+            let rest = &json[start..];
+            let end = rest.find(',').unwrap_or_else(|| rest.find('}').unwrap_or(rest.len()));
+            Some(rest[..end].trim().to_string())
+        } else {
+            None
+        }
+    };
+    let skip_activate = match (get_pid(&front), get_pid(&target)) {
+        (Some(pf), Some(pt)) => pf == pt,
+        _ => false
+    };
+    if !skip_activate {
+        crate::ocr::activate_window_at(x1, y1);
+        sleep(Duration::from_millis(180));
+    }
+
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|_| "创建 CGEventSource 失败".to_string())?;
 
@@ -82,7 +165,7 @@ pub fn drag_line(x1: f64, y1: f64, x2: f64, y2: f64, duration_secs: f64) -> Resu
         start_point,
         CGMouseButton::Left,
     ) {
-        move_event.post(CGEventTapLocation::HID);
+        post_event(&move_event);
     }
     sleep(Duration::from_millis(40));
 
@@ -93,7 +176,7 @@ pub fn drag_line(x1: f64, y1: f64, x2: f64, y2: f64, duration_secs: f64) -> Resu
         start_point,
         CGMouseButton::Left,
     ) {
-        down_event.post(CGEventTapLocation::HID);
+        post_event(&down_event);
     }
     sleep(Duration::from_millis(40));
 
@@ -114,7 +197,7 @@ pub fn drag_line(x1: f64, y1: f64, x2: f64, y2: f64, duration_secs: f64) -> Resu
             cur_point,
             CGMouseButton::Left,
         ) {
-            drag_event.post(CGEventTapLocation::HID);
+            post_event(&drag_event);
         }
         sleep(step_delay);
     }
@@ -126,7 +209,7 @@ pub fn drag_line(x1: f64, y1: f64, x2: f64, y2: f64, duration_secs: f64) -> Resu
         end_point,
         CGMouseButton::Left,
     ) {
-        up_event.post(CGEventTapLocation::HID);
+        post_event(&up_event);
     }
     sleep(Duration::from_millis(30));
 
@@ -143,6 +226,28 @@ pub fn drag_curve(
     y2: f64,
     duration_secs: f64,
 ) -> Result<(), String> {
+    crate::ocr::ensure_mask_passthrough();
+    let front = crate::ocr::get_frontmost_app_json();
+    let target = crate::ocr::get_app_at_point_json(x1, y1);
+    let get_pid = |json: &str| -> Option<String> {
+        if let Some(pos) = json.find("\"pid\":") {
+            let start = pos + 6;
+            let rest = &json[start..];
+            let end = rest.find(',').unwrap_or_else(|| rest.find('}').unwrap_or(rest.len()));
+            Some(rest[..end].trim().to_string())
+        } else {
+            None
+        }
+    };
+    let skip_activate = match (get_pid(&front), get_pid(&target)) {
+        (Some(pf), Some(pt)) => pf == pt,
+        _ => false
+    };
+    if !skip_activate {
+        crate::ocr::activate_window_at(x1, y1);
+        sleep(Duration::from_millis(180));
+    }
+
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|_| "创建 CGEventSource 失败".to_string())?;
 
@@ -156,7 +261,7 @@ pub fn drag_curve(
         start_point,
         CGMouseButton::Left,
     ) {
-        move_event.post(CGEventTapLocation::HID);
+        post_event(&move_event);
     }
     sleep(Duration::from_millis(40));
 
@@ -167,7 +272,7 @@ pub fn drag_curve(
         start_point,
         CGMouseButton::Left,
     ) {
-        down_event.post(CGEventTapLocation::HID);
+        post_event(&down_event);
     }
     sleep(Duration::from_millis(40));
 
@@ -189,7 +294,7 @@ pub fn drag_curve(
             cur_point,
             CGMouseButton::Left,
         ) {
-            drag_event.post(CGEventTapLocation::HID);
+            post_event(&drag_event);
         }
         sleep(step_delay);
     }
@@ -201,7 +306,7 @@ pub fn drag_curve(
         end_point,
         CGMouseButton::Left,
     ) {
-        up_event.post(CGEventTapLocation::HID);
+        post_event(&up_event);
     }
     sleep(Duration::from_millis(30));
 
@@ -210,19 +315,22 @@ pub fn drag_curve(
 
 /// 鼠标滚轮滚动：向上或向下滚动指定步数/距离
 pub fn scroll(direction: &str, distance: i32, x: Option<f64>, y: Option<f64>) -> Result<(), String> {
+    crate::ocr::ensure_mask_passthrough();
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|_| "创建 CGEventSource 失败".to_string())?;
 
-    // 如果指定了位置，先移动光标
+    // 如果指定了位置，先激活窗口并移动光标
     if let (Some(px), Some(py)) = (x, y) {
+        crate::ocr::activate_window_at(px, py);
         let point = CGPoint::new(px, py);
+
         if let Ok(move_event) = CGEvent::new_mouse_event(
             source.clone(),
             CGEventType::MouseMoved,
             point,
             CGMouseButton::Left,
         ) {
-            move_event.post(CGEventTapLocation::HID);
+            post_event(&move_event);
         }
         sleep(Duration::from_millis(30));
     }
@@ -242,7 +350,7 @@ pub fn scroll(direction: &str, distance: i32, x: Option<f64>, y: Option<f64>) ->
                 0,
             );
             if !event.is_null() {
-                // kCGHIDEventTap = 0
+                // 向系统级底层 kCGHIDEventTap (0) 派发
                 CGEventPost(0, event);
                 CFRelease(event);
             }

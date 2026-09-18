@@ -2,35 +2,47 @@
 #import <Vision/Vision.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <AppKit/AppKit.h>
+#import <ApplicationServices/ApplicationServices.h>
+#import <ImageIO/ImageIO.h>
 #import <dlfcn.h>
-#import <objc/runtime.h>
 
 typedef struct {
     double x;
     double y;
+    double width;
+    double height;
     int found;
 } NativeOCRResult;
 
-typedef CGImageRef (*CGDisplayCreateImageFunc)(CGDirectDisplayID displayID);
 typedef CGImageRef (*CGWindowListCreateImageFunc)(CGRect screenBounds, CGWindowListOption listOptions, CGWindowID windowID, CGWindowImageOption imageOptions);
 
-static CGImageRef capture_screen_image(CGRect screenRect, CGDirectDisplayID displayID) {
-    static CGDisplayCreateImageFunc pCGDisplayCreateImage = NULL;
+// 精准截取指定 CoreGraphics 矩形区域 (坐标系左上角为 (0,0))
+static CGImageRef capture_core_graphics_rect(CGRect captureRect) {
+    uint32_t count = 0;
+    CGDirectDisplayID displays[8];
+    CGDirectDisplayID targetDisplay = CGMainDisplayID();
+    
+    if (CGGetDisplaysWithRect(captureRect, 8, displays, &count) == kCGErrorSuccess && count > 0) {
+        targetDisplay = displays[0];
+        CGRect dispBounds = CGDisplayBounds(targetDisplay);
+        CGRect localRect = CGRectMake(captureRect.origin.x - dispBounds.origin.x,
+                                      captureRect.origin.y - dispBounds.origin.y,
+                                      captureRect.size.width,
+                                      captureRect.size.height);
+        CGImageRef img = CGDisplayCreateImageForRect(targetDisplay, localRect);
+        if (img) return img;
+    }
+    
+    // 安全降级回退方案：动态加载 CGWindowListCreateImage
     static CGWindowListCreateImageFunc pCGWindowListCreateImage = NULL;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        pCGDisplayCreateImage = (CGDisplayCreateImageFunc)dlsym(RTLD_DEFAULT, "CGDisplayCreateImage");
         pCGWindowListCreateImage = (CGWindowListCreateImageFunc)dlsym(RTLD_DEFAULT, "CGWindowListCreateImage");
     });
-
-    CGImageRef img = NULL;
-    if (pCGDisplayCreateImage) {
-        img = pCGDisplayCreateImage(displayID);
+    if (pCGWindowListCreateImage) {
+        return pCGWindowListCreateImage(captureRect, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault);
     }
-    if (!img && pCGWindowListCreateImage) {
-        img = pCGWindowListCreateImage(screenRect, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault);
-    }
-    return img;
+    return NULL;
 }
 
 NativeOCRResult recognize_and_find_text(
@@ -41,61 +53,125 @@ NativeOCRResult recognize_and_find_text(
     double roi_w,
     double roi_h
 ) {
-    __block NativeOCRResult result = {0, 0, 0};
+    __block NativeOCRResult result = {0, 0, 0, 0, 0};
 
     @autoreleasepool {
         if (!target_c_str) return result;
         NSString *target = [NSString stringWithUTF8String:target_c_str];
         if (!target || target.length == 0) return result;
 
-        NSScreen *mainScreen = [NSScreen mainScreen];
-        if (!mainScreen) return result;
+        NSScreen *primaryScreen = [NSScreen screens].firstObject;
+        if (!primaryScreen) return result;
+        CGFloat primaryH = primaryScreen.frame.size.height;
+        CGFloat primaryW = primaryScreen.frame.size.width;
 
-        CGRect screenRect = mainScreen.frame;
-        CGDirectDisplayID displayID = (CGDirectDisplayID)[[[mainScreen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+        CGRect captureRect;
+        BOOL isLocalROI = (roi_w > 10.0 && roi_h > 10.0);
 
-        CGImageRef screenImage = capture_screen_image(screenRect, displayID);
+        if (isLocalROI) {
+            captureRect = CGRectMake(roi_x, roi_y, roi_w, roi_h);
+        } else {
+            captureRect = CGRectMake(0, 0, primaryW, primaryH);
+        }
+
+        CGImageRef screenImage = capture_core_graphics_rect(captureRect);
         if (!screenImage) return result;
+
+        // 保存一份至临时目录供快速排查
+        NSURL *tmpUrl = [NSURL fileURLWithPath:@"/tmp/glimpse_captured.png"];
+        CGImageDestinationRef dest = CGImageDestinationCreateWithURL((__bridge CFURLRef)tmpUrl, (CFStringRef)@"public.png", 1, NULL);
+        if (dest) {
+            CGImageDestinationAddImage(dest, screenImage, NULL);
+            CGImageDestinationFinalize(dest);
+            CFRelease(dest);
+        }
 
         VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:^(VNRequest *req, NSError *error) {
             if (error || !req.results) return;
 
             NSArray *observations = req.results;
             NSString *lowerTarget = [target lowercaseString];
+            NSString *cleanTarget = [lowerTarget stringByReplacingOccurrencesOfString:@"：" withString:@""];
+            cleanTarget = [cleanTarget stringByReplacingOccurrencesOfString:@":" withString:@""];
+            cleanTarget = [cleanTarget stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
-            for (VNRecognizedTextObservation *obs in observations) {
+            // 按屏幕从上到下、从左到右自然阅读顺序排序
+            NSArray *sortedObservations = [observations sortedArrayUsingComparator:^NSComparisonResult(VNRecognizedTextObservation *a, VNRecognizedTextObservation *b) {
+                CGFloat topA = 1.0 - CGRectGetMaxY(a.boundingBox);
+                CGFloat topB = 1.0 - CGRectGetMaxY(b.boundingBox);
+                if (fabs(topA - topB) > 0.02) {
+                    return topA < topB ? NSOrderedAscending : NSOrderedDescending;
+                }
+                return CGRectGetMinX(a.boundingBox) < CGRectGetMinX(b.boundingBox) ? NSOrderedAscending : NSOrderedDescending;
+            }];
+
+            NSMutableArray *allRecognized = [NSMutableArray array];
+
+            for (VNRecognizedTextObservation *obs in sortedObservations) {
                 VNRecognizedText *topCandidate = [[obs topCandidates:1] firstObject];
                 if (!topCandidate) continue;
 
                 NSString *candidate = [topCandidate.string lowercaseString];
-                BOOL matched = NO;
+                [allRecognized addObject:topCandidate.string];
+                NSString *cleanCandidate = [candidate stringByReplacingOccurrencesOfString:@"：" withString:@""];
+                cleanCandidate = [cleanCandidate stringByReplacingOccurrencesOfString:@":" withString:@""];
+                cleanCandidate = [cleanCandidate stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
+                NSCharacterSet *impuritySet = [NSCharacterSet characterSetWithCharactersInString:@"0123456789•°$#* \t\r\n"];
+                NSString *strippedCandidate = [cleanCandidate stringByTrimmingCharactersInSet:impuritySet];
+
+                BOOL matched = NO;
                 if (is_fuzzy) {
-                    matched = [candidate containsString:lowerTarget] || [lowerTarget containsString:candidate];
+                    matched = [candidate containsString:lowerTarget] ||
+                              (cleanTarget.length > 0 && [cleanCandidate containsString:cleanTarget]) ||
+                              (cleanTarget.length > 0 && [strippedCandidate containsString:cleanTarget]);
                 } else {
-                    matched = [candidate isEqualToString:lowerTarget];
+                    matched = [candidate isEqualToString:lowerTarget] ||
+                              (cleanTarget.length > 0 && [cleanCandidate isEqualToString:cleanTarget]);
                 }
 
                 if (matched) {
-                    CGRect box = obs.boundingBox;
+                    CGRect box = obs.boundingBox; // Vision 归一化坐标：原点在左下角 (0,0)
                     CGFloat normCenterX = CGRectGetMidX(box);
-                    CGFloat normCenterY = 1.0 - CGRectGetMidY(box);
+                    CGFloat normCenterY = 1.0 - CGRectGetMidY(box); // 转换为左上角为原点
 
-                    CGFloat screenX = screenRect.origin.x + (normCenterX * screenRect.size.width);
-                    CGFloat screenY = screenRect.origin.y + (normCenterY * screenRect.size.height);
+                    // 使用 Apple Vision 原生 boundingBoxForRange 提取子字符串精确范围
+                    NSRange subRange = [topCandidate.string rangeOfString:target options:NSCaseInsensitiveSearch];
+                    if (subRange.location == NSNotFound && cleanTarget.length > 0) {
+                        subRange = [topCandidate.string rangeOfString:cleanTarget options:NSCaseInsensitiveSearch];
+                    }
 
-                    if (roi_w > 0 && roi_h > 0) {
-                        if (screenX < roi_x || screenX > (roi_x + roi_w) ||
-                            screenY < roi_y || screenY > (roi_y + roi_h)) {
-                            continue;
+                    if (subRange.location != NSNotFound) {
+                        NSError *rangeErr = nil;
+                        VNRectangleObservation *subObs = [topCandidate boundingBoxForRange:subRange error:&rangeErr];
+                        if (subObs && !rangeErr) {
+                            box = subObs.boundingBox;
+                            normCenterX = CGRectGetMidX(box);
+                            normCenterY = 1.0 - CGRectGetMidY(box);
                         }
                     }
 
-                    result.x = screenX;
-                    result.y = screenY;
+                    if (isLocalROI) {
+                        result.x = roi_x + (normCenterX * roi_w);
+                        result.y = roi_y + (normCenterY * roi_h);
+                        result.width = box.size.width * roi_w;
+                        result.height = box.size.height * roi_h;
+                    } else {
+                        result.x = normCenterX * primaryW;
+                        result.y = normCenterY * primaryH;
+                        result.width = box.size.width * primaryW;
+                        result.height = box.size.height * primaryH;
+                    }
                     result.found = 1;
                     break;
                 }
+            }
+
+            if (result.found == 0 && allRecognized.count > 0) {
+                NSString *joined = [allRecognized componentsJoinedByString:@"\n"];
+                [joined writeToFile:@"/tmp/glimpse_ocr_candidates.txt" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            } else if (result.found == 1) {
+                [@"" writeToFile:@"/tmp/glimpse_ocr_candidates.txt" atomically:YES encoding:NSUTF8StringEncoding error:nil];
             }
         }];
 
@@ -104,13 +180,48 @@ NativeOCRResult recognize_and_find_text(
         request.usesLanguageCorrection = YES;
 
         VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:screenImage options:@{}];
-        NSError *performError = nil;
-        [handler performRequests:@[request] error:&performError];
-
+        [handler performRequests:@[request] error:nil];
         CGImageRelease(screenImage);
     }
 
     return result;
+}
+
+int native_save_screenshot_rect(double x, double y, double w, double h, const char *file_path) {
+    if (!file_path) return 0;
+    @autoreleasepool {
+        NSScreen *primaryScreen = [NSScreen screens].firstObject;
+        if (!primaryScreen) return 0;
+        CGFloat primaryH = primaryScreen.frame.size.height;
+        CGFloat primaryW = primaryScreen.frame.size.width;
+
+        CGRect captureRect;
+        if (w > 5.0 && h > 5.0) {
+            captureRect = CGRectMake(x, y, w, h);
+        } else {
+            captureRect = CGRectMake(0, 0, primaryW, primaryH);
+        }
+
+        CGImageRef screenImage = capture_core_graphics_rect(captureRect);
+        if (!screenImage) return 0;
+
+        NSString *pathStr = [NSString stringWithUTF8String:file_path];
+        NSString *parentDir = [pathStr stringByDeletingLastPathComponent];
+        [[NSFileManager defaultManager] createDirectoryAtPath:parentDir withIntermediateDirectories:YES attributes:nil error:nil];
+
+        NSURL *fileUrl = [NSURL fileURLWithPath:pathStr];
+        CGImageDestinationRef dest = CGImageDestinationCreateWithURL((__bridge CFURLRef)fileUrl, (CFStringRef)@"public.png", 1, NULL);
+        int success = 0;
+        if (dest) {
+            CGImageDestinationAddImage(dest, screenImage, NULL);
+            if (CGImageDestinationFinalize(dest)) {
+                success = 1;
+            }
+            CFRelease(dest);
+        }
+        CGImageRelease(screenImage);
+        return success;
+    }
 }
 
 int native_check_accessibility(void) {
@@ -124,149 +235,19 @@ void native_open_accessibility_pref(void) {
     }
 }
 
-// -------------------------------------------------------------
-// 递归关闭 WKWebView 及所有容器 View 的背景绘制，实现真 100% 透明通道
-// -------------------------------------------------------------
-static void make_view_transparent(NSView *view) {
-    if (!view) return;
-
-    SEL drawsBgSel = NSSelectorFromString(@"setDrawsBackground:");
-    if ([view respondsToSelector:drawsBgSel]) {
-        void (*func)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))[view methodForSelector:drawsBgSel];
-        if (func) func(view, drawsBgSel, NO);
+int native_check_screen_recording(void) {
+    if (@available(macOS 10.15, *)) {
+        return CGPreflightScreenCaptureAccess() ? 1 : 0;
     }
-
-    if ([view layer]) {
-        [[view layer] setBackgroundColor:NULL];
-        [[view layer] setOpaque:NO];
-    }
-
-    for (NSView *sub in [view subviews]) {
-        make_view_transparent(sub);
-    }
+    return 1;
 }
 
-// -------------------------------------------------------------
-// 全局动态穿透状态管理 (60fps 屏幕绝对物理坐标无缝动态切换)
-// -------------------------------------------------------------
-static NSWindow *s_maskWindow = nil;
-static NSTimer *s_mouseMonitorTimer = nil;
-static BOOL s_currentIgnores = NO;
-static int s_interactiveOverride = 0;
-static BOOL s_isDraggingActive = NO;
-
-static void update_mask_mouse_location(void) {
-    if (!s_maskWindow) return;
-    if (![s_maskWindow isVisible]) return;
-
-    // 选区模式或强制交互状态下，整窗保持可响应
-    if (s_interactiveOverride) {
-        if (s_currentIgnores) {
-            [s_maskWindow setIgnoresMouseEvents:NO];
-            s_currentIgnores = NO;
-        }
-        return;
+void native_request_screen_recording(void) {
+    if (@available(macOS 10.15, *)) {
+        CGRequestScreenCaptureAccess();
     }
-
-    NSRect frame = [s_maskWindow frame];
-    NSPoint mouse = [NSEvent mouseLocation];
-
-    CGFloat w = frame.size.width;
-    CGFloat h = frame.size.height;
-    CGFloat relX = mouse.x - frame.origin.x;
-    CGFloat relY = mouse.y - frame.origin.y;
-
-    BOOL insideWindow = (relX >= 0.0 && relX <= w && relY >= 0.0 && relY <= h);
-    NSUInteger pressed = [NSEvent pressedMouseButtons];
-    BOOL leftPressed = (pressed & 1) != 0;
-
-    // 如果鼠标按键已经松开，重置拖动交互锁定状态
-    if (!leftPressed) {
-        s_isDraggingActive = NO;
-    }
-
-    // 1. 顶部刘海交互区：水平居中 220px，垂直顶部 32px (精准贴紧，下方无死区)
-    CGFloat notchW = 220.0;
-    CGFloat notchLeft = (w - notchW) / 2.0;
-    CGFloat notchRight = (w + notchW) / 2.0;
-    BOOL inNotch = insideWindow && (relX >= notchLeft && relX <= notchRight && relY >= (h - 32.0) && relY <= h);
-
-    // 2. 四周边缘 14px 边框交互区 (用于边缘拉伸和尺寸调整)
-    BOOL inBorder = insideWindow && (relX <= 14.0 || relX >= (w - 14.0) || relY <= 14.0 || relY >= (h - 14.0));
-
-    // 3. 右下角手柄交互区 (30px x 30px)
-    BOOL inHandle = insideWindow && (relX >= (w - 30.0) && relY <= 30.0);
-
-    BOOL inInteractiveArea = (inNotch || inBorder || inHandle);
-
-    // 如果在交互区按下了鼠标左键，锁定交互状态直至松手（防止快速拖拽中途切为穿透）
-    if (inInteractiveArea && leftPressed) {
-        s_isDraggingActive = YES;
-    }
-
-    BOOL shouldBeInteractive = inInteractiveArea || s_isDraggingActive;
-    BOOL targetIgnores = !shouldBeInteractive;
-
-    if (targetIgnores != s_currentIgnores) {
-        [s_maskWindow setIgnoresMouseEvents:targetIgnores];
-        s_currentIgnores = targetIgnores;
-    }
-}
-
-void start_dynamic_mask_passthrough(void *window_ptr) {
-    if (!window_ptr) return;
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSWindow *window = (NSWindow *)window_ptr;
-        s_maskWindow = window;
-
-        [window setOpaque:NO];
-        [window setBackgroundColor:[NSColor clearColor]];
-        [window setHasShadow:NO];
-        [window setLevel:NSFloatingWindowLevel];
-
-        // 默认设置为穿透，保证一打开时中间区域就是击穿到底层的
-        [window setIgnoresMouseEvents:YES];
-        s_currentIgnores = YES;
-        s_isDraggingActive = NO;
-
-        make_view_transparent([window contentView]);
-
-        if (s_mouseMonitorTimer) {
-            [s_mouseMonitorTimer invalidate];
-            s_mouseMonitorTimer = nil;
-        }
-
-        s_mouseMonitorTimer = [NSTimer timerWithTimeInterval:0.016
-                                                     repeats:YES
-                                                       block:^(NSTimer * _Nonnull timer) {
-            (void)timer;
-            update_mask_mouse_location();
-        }];
-        [[NSRunLoop mainRunLoop] addTimer:s_mouseMonitorTimer forMode:NSRunLoopCommonModes];
-    });
-}
-
-void set_mask_selecting_mode(int is_selecting) {
-    s_interactiveOverride = is_selecting;
-    if (s_maskWindow) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (is_selecting) {
-                [s_maskWindow setIgnoresMouseEvents:NO];
-                s_currentIgnores = NO;
-            } else {
-                [s_maskWindow setIgnoresMouseEvents:YES];
-                s_currentIgnores = YES;
-            }
-        });
-    }
-}
-
-void native_perform_window_drag(void *window_ptr) {
-    if (!window_ptr) return;
-    NSWindow *window = (NSWindow *)window_ptr;
-    NSEvent *event = [NSApp currentEvent];
-    if (event) {
-        [window performWindowDragWithEvent:event];
+    NSURL *url = [NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"];
+    if (url) {
+        [[NSWorkspace sharedWorkspace] openURL:url];
     }
 }

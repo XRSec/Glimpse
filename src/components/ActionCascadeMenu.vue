@@ -5,12 +5,12 @@
       <slot name="trigger">
         <button
           type="button"
-          class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-medium shadow-sm transition-all hover:border-zinc-600 active:scale-95 cursor-pointer"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#191716] hover:bg-[#2c2825] border border-[#383430] text-[#fbfaf8] text-xs font-medium shadow-sm transition-all hover:border-[#da7756] active:scale-95 cursor-pointer"
         >
-          <component :is="currentActionMeta.icon" class="w-3.5 h-3.5 text-blue-400" />
+          <component :is="currentActionMeta.icon" class="w-3.5 h-3.5 text-[#da7756]" />
           <span>{{ currentActionMeta.label }}</span>
           <ChevronDown
-            class="w-3.5 h-3.5 text-zinc-400 transition-transform duration-200"
+            class="w-3.5 h-3.5 text-[#a8a29e] transition-transform duration-200"
             :class="{ 'rotate-180': isOpen }"
           />
         </button>
@@ -20,13 +20,13 @@
     <!-- ================= 核心二级级联弹出菜单 ================= -->
     <div
       v-if="isOpen"
-      class="absolute z-50 mt-2 flex rounded-2xl bg-zinc-900/98 border border-zinc-700/90 shadow-2xl backdrop-blur-2xl overflow-hidden font-sans animate-in fade-in zoom-in-95 duration-150"
+      class="absolute z-50 mt-2 flex rounded-2xl bg-[#24211e]/98 border border-[#383430] shadow-2xl backdrop-blur-2xl overflow-hidden font-sans animate-in fade-in zoom-in-95 duration-150"
       :class="placementClasses"
       @click.stop
     >
       <!-- 左侧：主菜单列表（竖向，深色背景，带向右小箭头 >） -->
-      <div class="w-36 py-2 border-r border-zinc-800/80 bg-zinc-950/60 flex flex-col shrink-0">
-        <div class="px-3 pb-1.5 mb-1 border-b border-zinc-800/60 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+      <div class="w-36 py-2 border-r border-[#383430] bg-[#1c1a17]/80 flex flex-col shrink-0">
+        <div class="px-3 pb-1.5 mb-1 border-b border-[#383430] text-[10px] font-semibold text-[#78716c] uppercase tracking-wider">
           动作大类
         </div>
         <div
@@ -35,8 +35,8 @@
           class="group relative flex items-center justify-between px-3 py-2 text-xs font-medium cursor-pointer transition-colors duration-150"
           :class="[
             activeCategory === cat.id
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-zinc-300 hover:bg-zinc-800/80 hover:text-white'
+              ? 'bg-[#da7756] text-white shadow-sm'
+              : 'text-[#d5cdc4] hover:bg-[#2c2825] hover:text-[#fbfaf8]'
           ]"
           @mouseenter="onCategoryHover(cat.id)"
           @click="onCategoryClick(cat.id)"
@@ -45,7 +45,7 @@
             <component
               :is="cat.icon"
               class="w-3.5 h-3.5 shrink-0"
-              :class="activeCategory === cat.id ? 'text-white' : 'text-zinc-400 group-hover:text-blue-400'"
+              :class="activeCategory === cat.id ? 'text-white' : 'text-[#a8a29e] group-hover:text-[#da7756]'"
             />
             <span class="truncate">{{ cat.name }}</span>
           </div>
@@ -56,16 +56,16 @@
             :class="[
               activeCategory === cat.id
                 ? 'text-white translate-x-0.5'
-                : 'text-zinc-500 group-hover:text-zinc-300'
+                : 'text-[#78716c] group-hover:text-[#d5cdc4]'
             ]"
           />
         </div>
       </div>
 
       <!-- 右侧：二级子菜单（鼠标悬停或点击主菜单项时在右侧展现） -->
-      <div class="w-64 py-2 bg-zinc-900/90 flex flex-col shrink-0 min-h-[310px]">
-        <div class="px-3.5 pb-1.5 mb-1 border-b border-zinc-800/60 flex items-center justify-between text-[10px] text-zinc-500">
-          <span class="font-semibold text-zinc-400">选择具体动作</span>
+      <div class="w-64 py-2 bg-[#24211e]/95 flex flex-col shrink-0 h-[310px]">
+        <div class="px-3.5 pb-1.5 mb-1 border-b border-[#383430] flex items-center justify-between text-[10px] text-[#78716c]">
+          <span class="font-semibold text-[#a8a29e]">选择具体动作</span>
           <span>{{ currentSubItems.length }} 个可用项</span>
         </div>
 
@@ -76,8 +76,8 @@
             class="group px-2.5 py-2 rounded-xl cursor-pointer flex items-start gap-2.5 transition-all duration-150"
             :class="[
               modelValue === item.type
-                ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40'
-                : 'hover:bg-zinc-800/80 text-zinc-200 border border-transparent'
+                ? 'bg-[#da7756]/15 text-[#da7756] border border-[#da7756]/30'
+                : 'hover:bg-[#2c2825] text-[#d5cdc4] border border-transparent'
             ]"
             @click="handleSelect(item.type)"
           >
@@ -85,8 +85,8 @@
               class="p-1.5 rounded-lg shrink-0 mt-0.5"
               :class="[
                 modelValue === item.type
-                  ? 'bg-blue-500/30 text-blue-300'
-                  : 'bg-zinc-800 text-zinc-400 group-hover:text-blue-400 group-hover:bg-zinc-700/80'
+                  ? 'bg-[#da7756]/20 text-[#da7756]'
+                  : 'bg-[#191716] text-[#a8a29e] group-hover:text-[#da7756] group-hover:bg-[#2c2825]'
               ]"
             >
               <component :is="item.icon" class="w-3.5 h-3.5" />
@@ -94,24 +94,24 @@
 
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span class="text-xs font-semibold text-zinc-100 group-hover:text-white truncate">
+                <span class="text-xs font-semibold text-[#fbfaf8] group-hover:text-[#fbfaf8] truncate">
                   {{ item.label }}
                 </span>
                 <span
                   v-if="item.badge"
-                  class="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-normal shrink-0 border border-amber-500/30"
+                  class="text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-300 font-normal shrink-0 border border-amber-500/30"
                 >
                   {{ item.badge }}
                 </span>
               </div>
-              <p v-if="item.subLabel" class="text-[11px] text-zinc-400 group-hover:text-zinc-300 truncate mt-0.5">
+              <p v-if="item.subLabel" class="text-[11px] text-[#a8a29e] group-hover:text-[#d5cdc4] truncate mt-0.5">
                 {{ item.subLabel }}
               </p>
             </div>
 
             <Check
               v-if="modelValue === item.type"
-              class="w-4 h-4 text-blue-400 shrink-0 self-center"
+              class="w-4 h-4 text-[#da7756] shrink-0 self-center"
             />
           </div>
         </div>
@@ -138,7 +138,7 @@ import {
   Type,
   Palette,
   Boxes,
-  Sparkles,
+  ScanSearch,
   ArrowUpRight,
   Spline,
   Mouse,
@@ -229,13 +229,6 @@ const categories = [
         label: '点击节点',
         subLabel: 'macOS 原生 Accessibility 节点',
         icon: Boxes
-      },
-      {
-        type: 'ai_click' as ActionType,
-        label: 'AI点击',
-        subLabel: '多模态意图智能推理点击',
-        badge: 'AI',
-        icon: Sparkles
       }
     ]
   },
@@ -355,6 +348,38 @@ const categories = [
         label: '截图保存',
         subLabel: '保存当前选框或全屏快照至磁盘',
         icon: Camera
+      }
+    ]
+  },
+  {
+    id: 'identify' as ActionCategory,
+    name: '识别',
+    icon: ScanSearch,
+    children: [
+      {
+        type: 'identify_text' as ActionType,
+        label: '识别文字',
+        subLabel: 'Apple 原生 Vision OCR 定位文字，不点击',
+        badge: 'OCR',
+        icon: Type
+      },
+      {
+        type: 'identify_image' as ActionType,
+        label: '识别图片',
+        subLabel: '图像模板匹配相似度定位，不点击',
+        icon: ImageIcon
+      },
+      {
+        type: 'identify_color' as ActionType,
+        label: '识别颜色',
+        subLabel: '特定 HEX 色值容差查找，不点击',
+        icon: Palette
+      },
+      {
+        type: 'identify_node' as ActionType,
+        label: '识别节点',
+        subLabel: 'macOS 原生 Accessibility 节点定位，不点击',
+        icon: Boxes
       }
     ]
   },

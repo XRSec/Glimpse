@@ -11,7 +11,7 @@
   <div
     v-else
     id="main-scroll-container"
-    class="w-full bg-zinc-950 text-zinc-100 font-sans relative"
+    class="w-full bg-[#0c0c0e] text-zinc-100 text-[#fbfaf8] font-sans relative"
     style="height: 100vh; max-height: 100vh; overflow-y: auto !important; overflow-x: hidden;"
   >
     <component :is="activeComponent" />
@@ -24,6 +24,7 @@ import { scriptStore } from './stores/scriptStore';
 import ScriptsList from './components/ScriptsList.vue';
 import AddEditScript from './components/AddEditScript.vue';
 import SettingsView from './components/SettingsView.vue';
+import AboutView from './components/AboutView.vue';
 import RegionMaskOverlay from './components/RegionMaskOverlay.vue';
 
 // 检查是否处于 #overlay 悬浮蒙版模式
@@ -53,18 +54,42 @@ const activeComponent = computed(() => {
       return AddEditScript;
     case 'settings':
       return SettingsView;
+    case 'about':
+      return AboutView;
     case 'list':
     default:
       return ScriptsList;
   }
 });
 
+import { maskStore } from './stores/maskStore';
+import { listen as tauriListen } from '@tauri-apps/api/event';
+import { cuaDriver } from './services/cuaDriverService';
+
+const handleEmergencyStop = () => {
+  if (scriptStore.executionStatus.value === 'running' || scriptStore.executionStatus.value === 'paused') {
+    scriptStore.stopScript();
+  }
+  if (scriptStore.isRecording.value) {
+    scriptStore.stopRecording();
+  }
+  maskStore.cancelInteraction();
+  maskStore.setSelectingMode(false);
+};
+
+if (typeof window !== 'undefined') {
+  (window as any).__glimpse_emergency_stop = handleEmergencyStop;
+  try {
+    tauriListen('glimpse_emergency_stop', () => {
+      handleEmergencyStop();
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 // 全局键盘事件监听
 const handleKeyDown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
-    if (scriptStore.isRecording.value) {
-      scriptStore.stopRecording();
-    }
+    handleEmergencyStop();
   }
 };
 
@@ -72,11 +97,15 @@ onMounted(() => {
   updateRouteMode();
   window.addEventListener('hashchange', updateRouteMode);
   window.addEventListener('keydown', handleKeyDown);
+  if (!isOverlayMode.value) {
+    cuaDriver.start().catch((e) => console.warn('[cuaDriver] init failed:', e.message));
+  }
 });
 
 onUnmounted(() => {
   window.removeEventListener('hashchange', updateRouteMode);
   window.removeEventListener('keydown', handleKeyDown);
+  cuaDriver.stop();
 });
 </script>
 

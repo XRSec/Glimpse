@@ -26,3 +26,4 @@ objc = "0.2.7"
 tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
+axuielement = "0.9.1"

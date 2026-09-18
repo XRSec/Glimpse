@@ -25,3 +25,7 @@ src-tauri/gen/
 *.njsproj
 *.sln
 *.sw?
+
+# Agents & local tooling
+.agents/
+.claude/
