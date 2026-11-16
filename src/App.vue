@@ -15,6 +15,11 @@
     style="height: 100vh; max-height: 100vh; overflow-y: auto !important; overflow-x: hidden;"
   >
     <component :is="activeComponent" />
+    <UpdateModal
+      :is-open="showStartupUpdate"
+      :update-info="startupUpdateInfo"
+      @close="showStartupUpdate = false"
+    />
   </div>
 </template>
 
@@ -62,9 +67,14 @@ const activeComponent = computed(() => {
   }
 });
 
-import { maskStore } from './stores/maskStore';
+import { maskStore, isTauriEnv } from './stores/maskStore';
+import { invoke } from '@tauri-apps/api/core';
 import { listen as tauriListen } from '@tauri-apps/api/event';
 import { cuaDriver } from './services/cuaDriverService';
+import UpdateModal, { type UpdateInfo } from './components/UpdateModal.vue';
+
+const showStartupUpdate = ref(false);
+const startupUpdateInfo = ref<UpdateInfo | null>(null);
 
 const handleEmergencyStop = () => {
   if (scriptStore.executionStatus.value === 'running' || scriptStore.executionStatus.value === 'paused') {
@@ -99,6 +109,19 @@ onMounted(() => {
   window.addEventListener('keydown', handleKeyDown);
   if (!isOverlayMode.value) {
     cuaDriver.start().catch((e) => console.warn('[cuaDriver] init failed:', e.message));
+    const autoCheck = typeof localStorage === 'undefined' || localStorage.getItem('glimpse:auto_check_update') !== 'false';
+    if (autoCheck && isTauriEnv()) {
+      setTimeout(() => {
+        invoke<UpdateInfo>('check_for_updates')
+          .then((info) => {
+            if (info?.has_update) {
+              startupUpdateInfo.value = info;
+              showStartupUpdate.value = true;
+            }
+          })
+          .catch(() => {});
+      }, 2500);
+    }
   }
 });
 

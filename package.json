@@ -3,7 +3,7 @@
   "productName": "Glimpse 灵眸",
   "description": "Glimpse 灵眸自动化 - 新一代 macOS 原生桌面级自动化脚本工具",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",

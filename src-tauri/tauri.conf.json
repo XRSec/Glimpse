@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Glimpse 灵眸",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "com.xrsec.glimpse",
   "build": {
     "frontendDist": "../dist",

@@ -43,7 +43,7 @@
             <!-- 状态光环 -->
             <div class="absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full bg-[#da7756] text-white text-[10px] font-bold shadow-md flex items-center gap-1">
               <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-              <span>v1.0</span>
+              <span>v{{ appVersion }}</span>
             </div>
           </div>
 
@@ -82,13 +82,35 @@
               </button>
 
               <button
-                @click="openUrl('https://github.com/XRSec/Screen-Remote')"
+                @click="openUrl('https://github.com/XRSec/Glimpse')"
                 class="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#262320] hover:bg-[#2c2825] text-[#d5cdc4] hover:text-[#fbfaf8] text-xs font-semibold border border-[#383430] transition-all active:scale-95 cursor-pointer"
               >
                 <Sparkles class="w-4 h-4 text-[#da7756]" />
                 <span>开源项目主页</span>
                 <ExternalLink class="w-3 h-3 text-[#a8a29e]" />
               </button>
+
+              <button
+                @click="handleCheckUpdate"
+                :disabled="checkingUpdate"
+                class="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#262320] hover:bg-[#2c2825] text-[#d5cdc4] hover:text-[#fbfaf8] text-xs font-semibold border border-[#383430] transition-all active:scale-95 cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw class="w-4 h-4 text-[#da7756]" :class="checkingUpdate ? 'animate-spin' : ''" />
+                <span>{{ checkingUpdate ? '正在检查...' : '检查更新' }}</span>
+              </button>
+            </div>
+
+            <div class="pt-2 flex flex-wrap items-center gap-4 justify-center md:justify-start text-xs">
+              <label class="inline-flex items-center gap-2 text-[#a8a29e] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  v-model="autoCheckUpdate"
+                  @change="saveAutoCheckPref"
+                  class="accent-[#da7756] rounded cursor-pointer"
+                />
+                <span>启动时自动检查更新</span>
+              </label>
+              <span v-if="updateStatusMsg" class="text-[11px] text-[#d5cdc4]">{{ updateStatusMsg }}</span>
             </div>
           </div>
         </div>
@@ -226,10 +248,18 @@
         </p>
       </footer>
     </div>
+
+    <UpdateModal
+      :is-open="showUpdateModal"
+      :update-info="updateInfo"
+      @close="showUpdateModal = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import {
   ArrowLeft,
   Shield,
@@ -243,9 +273,56 @@ import {
   Cpu,
   Heart,
   Sliders,
-  Workflow
+  Workflow,
+  RefreshCw
 } from 'lucide-vue-next';
-import { scriptStore, openExternalUrl } from '../stores/scriptStore';
+import { scriptStore, openExternalUrl, isTauriEnv } from '../stores/scriptStore';
+import UpdateModal, { type UpdateInfo } from './UpdateModal.vue';
+
+const appVersion = ref('1.0.0');
+const checkingUpdate = ref(false);
+const updateStatusMsg = ref('');
+const showUpdateModal = ref(false);
+const updateInfo = ref<UpdateInfo | null>(null);
+const autoCheckUpdate = ref(
+  typeof localStorage === 'undefined' || localStorage.getItem('glimpse:auto_check_update') !== 'false'
+);
+
+onMounted(async () => {
+  if (isTauriEnv()) {
+    try {
+      appVersion.value = await invoke<string>('get_app_version');
+    } catch {}
+  }
+});
+
+const saveAutoCheckPref = () => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('glimpse:auto_check_update', String(autoCheckUpdate.value));
+  }
+};
+
+const handleCheckUpdate = async () => {
+  if (!isTauriEnv()) {
+    updateStatusMsg.value = '请在桌面客户端内检查更新';
+    return;
+  }
+  try {
+    checkingUpdate.value = true;
+    updateStatusMsg.value = '';
+    const info = await invoke<UpdateInfo>('check_for_updates');
+    if (info?.has_update) {
+      updateInfo.value = info;
+      showUpdateModal.value = true;
+    } else {
+      updateStatusMsg.value = `当前已是最新版本 (v${info?.current_version || appVersion.value})`;
+    }
+  } catch (e: any) {
+    updateStatusMsg.value = `检查更新失败: ${e?.message || e}`;
+  } finally {
+    checkingUpdate.value = false;
+  }
+};
 
 const handleBack = () => {
   scriptStore.currentView.value = 'list';

@@ -2,6 +2,7 @@ mod ocr;
 mod simulator;
 mod keyboard;
 mod cua_driver;
+mod updater;
 
 use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, OpenOptions};
@@ -663,6 +664,25 @@ async fn cua_hotkey(pid: i64, keys: Vec<String>) -> Result<serde_json::Value, St
         .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+async fn check_for_updates() -> Result<updater::UpdateInfo, String> {
+    updater::check_github_update().await
+}
+
+#[tauri::command]
+async fn download_and_install_update(
+    app: tauri::AppHandle,
+    download_url: String,
+    file_name: String,
+) -> Result<(), String> {
+    updater::download_and_install(app, download_url, file_name).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -728,7 +748,10 @@ pub fn run() {
             cua_scroll,
             cua_type_text,
             cua_press_key,
-            cua_hotkey
+            cua_hotkey,
+            get_app_version,
+            check_for_updates,
+            download_and_install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running Glimpse application");
