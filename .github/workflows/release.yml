@@ -230,7 +230,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: ${{ !(github.event.inputs.draft == true || github.event.inputs.draft == 'true') }}
+    if: ${{ success() && needs.version-gate.outputs.need_release == 'true' && !(github.event.inputs.draft == true || github.event.inputs.draft == 'true') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
