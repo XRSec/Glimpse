@@ -1,4 +1,4 @@
-import { ref, nextTick } from 'vue';
+import { ref, reactive, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { isTauriEnv, maskStore } from './maskStore';
 import { activateTargetApp, applyAppWindowBounds, snapMaskToApp } from './appTargetStore';
@@ -21,6 +21,15 @@ export const currentStepIndex = ref(-1);
 export const currentLoop = ref(0);
 export const runningScript = ref<AutomationScript | null>(null);
 let lastStopTimestamp = 0;
+
+// 每步执行结果状态与耗时追踪
+export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'dry_run';
+export const stepResults = reactive<Map<number, StepStatus>>(new Map());
+export const stepTimings = reactive<Map<number, { startMs: number; endMs: number; durationMs: number }>>(new Map());
+export const totalEnabledSteps = ref(0);
+export const totalRepeatTarget = ref(1);
+export const runStartMs = ref(0);
+export const runEndMs = ref(0);
 
 let executionAbortController: { abort: boolean; pause: boolean } | null = null;
 
@@ -100,7 +109,8 @@ export const executeSingleAction = async (
   stepIndex: number,
   globalWait: number,
   controller: { abort: boolean; pause: boolean },
-  executedStepCoordinates: Record<number, { x: number; y: number }>
+  executedStepCoordinates: Record<number, { x: number; y: number }>,
+  dryRun: boolean = false
 ): Promise<boolean> => {
   currentStepIndex.value = stepIndex;
   broadcastSyncFn('state_updated', { currentStepIndex: stepIndex });
@@ -110,10 +120,13 @@ export const executeSingleAction = async (
   await maskStore.syncFromNative();
 
   if (!action.isEnabled) {
+    stepResults.set(stepIndex, 'skipped');
     logFn('info', `跳过已禁用动作: #${stepIndex + 1}「${action.name}」`, { actionId: action.id, stepIndex });
     return true;
   }
 
+  stepResults.set(stepIndex, 'running');
+  stepTimings.set(stepIndex, { startMs: Date.now(), endMs: 0, durationMs: 0 });
   logFn('info', `开始执行步骤 #${stepIndex + 1}「${action.name}」...`, { actionId: action.id, stepIndex });
 
   // 先推导并立刻在蒙版上绘制当前步骤限制区域矩形 (铁律：先画框后识别)
@@ -184,7 +197,10 @@ export const executeSingleAction = async (
         }
       }
 
-      if (useCua) {
+      if (dryRun) {
+        executedStepCoordinates[stepIndex] = { x: targetX, y: targetY };
+        logFn('info', `🛡️ [安全试运行] 坐标 (${targetX}, ${targetY}) 已定位，跳过 ${btnText}`, { actionId: action.id, stepIndex });
+      } else if (useCua) {
         try {
           await cuaDriver.click(targetPid!, targetX, targetY, btn);
         } catch (e: any) {
@@ -231,7 +247,9 @@ export const executeSingleAction = async (
         const finalY = isHit && hitY != null ? Math.round(hitY + textAct.offsetY) : undefined;
 
         if (isHit && finalX != null && finalY != null) {
-          if (useCua) {
+          if (dryRun) {
+            logFn('info', `🛡️ [安全试运行] OCR 命中「${textAct.targetText}」(${finalX}, ${finalY})，跳过点击`, { actionId: action.id, stepIndex });
+          } else if (useCua) {
             try {
               await cuaDriver.click(targetPid!, finalX, finalY, btn);
             } catch (e: any) {
@@ -338,6 +356,22 @@ export const executeSingleAction = async (
         if (!ok) return false;
       }
       logFn('success', `滚轮滚动完成${useCua ? ' [cua-driver]' : ''}`, { actionId: action.id, stepIndex });
+    } else if (action.type === 'send_key') {
+      const keyStr = ((action as any).key || '').trim();
+      const repeat = Number((action as any).repeat) || 1;
+      if (!keyStr) {
+        logFn('error', '发送按键失败: 未配置目标按键', { actionId: action.id, stepIndex });
+        isSuccess = false;
+      } else if (dryRun) {
+        logFn('info', `🛡️ [安全试运行] 跳过发送按键「${keyStr}」`, { actionId: action.id, stepIndex });
+      } else if (isTauriEnv()) {
+        await invoke('send_key', { key: keyStr, repeat });
+        logFn('success', `发送按键「${keyStr}」完成${repeat > 1 ? ` (×${repeat})` : ''}`, { actionId: action.id, stepIndex });
+      } else {
+        const ok = await sleepWithControl(150, controller);
+        if (!ok) return false;
+        logFn('success', `发送按键「${keyStr}」完成`, { actionId: action.id, stepIndex });
+      }
     } else if (action.type === 'delay') {
       const act = action as DelayAction;
       const waitTime = act.seconds || 1.0;
@@ -426,17 +460,26 @@ export const executeSingleAction = async (
     if (!waitOk) return false;
   }
 
+  // 记录执行结果和耗时
+  const endMs = Date.now();
+  const timing = stepTimings.get(stepIndex);
+  if (timing) {
+    timing.endMs = endMs;
+    timing.durationMs = endMs - timing.startMs;
+  }
+  stepResults.set(stepIndex, isSuccess ? (dryRun ? 'dry_run' : 'success') : 'failed');
+
   return isSuccess;
 };
 
 // 运行指定自动化脚本
 export const runScript = async (script: AutomationScript) => {
-  if (executionStatus.value === 'running' || executionStatus.value === 'stopped' || executionStatus.value === 'paused' || executionStatus.value === 'completed' || executionStatus.value === 'stopping') {
+  if (executionStatus.value === 'running' || executionStatus.value === 'paused' || executionStatus.value === 'stopping') {
     logFn('warn', '当前已有任务正在执行或正在停止中，请稍候');
     return;
   }
-  if (Date.now() - lastStopTimestamp < 2000) {
-    logFn('warn', '操作过于频繁，请 2 秒后再试');
+  if (Date.now() - lastStopTimestamp < 500) {
+    logFn('warn', '操作过于频繁，请稍后再试');
     return;
   }
 
@@ -444,6 +487,19 @@ export const runScript = async (script: AutomationScript) => {
   executionStatus.value = 'running';
   currentStepIndex.value = -1;
   currentLoop.value = 0;
+
+  // 初始化执行追踪
+  stepResults.clear();
+  stepTimings.clear();
+  runStartMs.value = Date.now();
+  runEndMs.value = 0;
+  totalRepeatTarget.value = script.config.repeatCount ?? 1;
+  let enabledCount = 0;
+  for (let k = 0; k < script.actions.length; k++) {
+    stepResults.set(k, script.actions[k].isEnabled ? 'pending' : 'skipped');
+    if (script.actions[k].isEnabled) enabledCount++;
+  }
+  totalEnabledSteps.value = enabledCount;
 
   if (isTauriEnv()) {
     invoke('reset_execution_abort').catch(() => {});
@@ -495,6 +551,11 @@ export const runScript = async (script: AutomationScript) => {
     broadcastSyncFn('state_updated', { currentLoop: loopCount });
     logFn('info', `--- 进入第 ${loopCount} 轮循环 ---`);
 
+    const dryRunLast = !!(script.config.dryRunLastStep);
+    const lastEnabledIdx = dryRunLast
+      ? (() => { for (let j = script.actions.length - 1; j >= 0; j--) { if (script.actions[j].isEnabled) return j; } return -1; })()
+      : -1;
+
     for (let i = 0; i < script.actions.length; i++) {
       if (controller.abort) break;
       while (controller.pause) {
@@ -505,7 +566,8 @@ export const runScript = async (script: AutomationScript) => {
       await new Promise((r) => setTimeout(r, 0));
 
       const action = script.actions[i];
-      let stepSuccess = await executeSingleAction(action, i, globalWait, controller, executedStepCoordinates);
+      const isDryRun = dryRunLast && i === lastEnabledIdx;
+      let stepSuccess = await executeSingleAction(action, i, globalWait, controller, executedStepCoordinates, isDryRun);
 
       // 每步自动重试
       const maxRetries = action.retryCount ?? 0;
@@ -516,7 +578,7 @@ export const runScript = async (script: AutomationScript) => {
         logFn('warn', `步骤 #${i + 1} 失败，自动重试 (${retryAttempt}/${maxRetries})，等待 ${retryWait}s...`, { actionId: action.id, stepIndex: i });
         const waitOk = await sleepWithControl(retryWait * 1000, controller);
         if (!waitOk) break;
-        stepSuccess = await executeSingleAction(action, i, globalWait, controller, executedStepCoordinates);
+        stepSuccess = await executeSingleAction(action, i, globalWait, controller, executedStepCoordinates, isDryRun);
       }
 
       if (!stepSuccess && pauseOnFailure) {
@@ -542,8 +604,10 @@ export const runScript = async (script: AutomationScript) => {
 
   if (controller.abort) {
     logFn('warn', `⏹ 脚本「${script.title}」已终止运行`);
+    runEndMs.value = Date.now();
   } else {
     executionStatus.value = 'completed';
+    runEndMs.value = Date.now();
     broadcastSyncFn('state_updated', { executionStatus: 'completed' });
     await nextTick();
     logFn('success', `✔ 脚本「${script.title}」全部执行完毕！共完成 ${loopCount} 轮循环`);

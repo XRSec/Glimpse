@@ -25,6 +25,7 @@ export type ActionType =
   | 'input_text'       // 输入文本
   | 'paste_clipboard'  // 粘贴剪贴板
   | 'clear_and_input'  // 清空并输入
+  | 'send_key'         // 发送按键 (支持所有按键与组合键)
   // 4. 打开系列
   | 'open_app'         // 打开应用
   | 'open_url'         // 打开网址
@@ -137,6 +138,13 @@ export interface InputAction extends BaseAction {
   text?: string;
 }
 
+// 6.1 发送按键动作
+export interface SendKeyAction extends BaseAction {
+  type: 'send_key';
+  key: string;
+  repeat?: number;
+}
+
 // 7. 打开动作
 export interface OpenAction extends BaseAction {
   type: 'open_app' | 'open_url' | 'open_file';
@@ -184,6 +192,7 @@ export type ScriptAction =
   | DragCurveAction
   | ScrollAction
   | InputAction
+  | SendKeyAction
   | OpenAction
   | RunScriptAction
   | UiWaitAction
@@ -230,6 +239,7 @@ export interface ScriptConfig {
   pauseOnFailure: boolean;    // 有动作失败立即暂停
   executionSpeed?: number;    // 执行倍速: 0.5, 1.0, 1.5, 2.0 (默认 1.0)
   exportMarkdownReport?: boolean; // 是否生成 Markdown 诊断报告 (默认 false)
+  dryRunLastStep?: boolean;   // 安全试运行：最后一步仅 OCR 定位不派发点击 (默认 false)
 }
 
 // 完整脚本模型

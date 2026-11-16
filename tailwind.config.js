@@ -21,13 +21,6 @@ export default {
           muted: '#a8a29e',
           subtle: '#78716c'
         },
-        mac: {
-          bg: '#1e1e1e',
-          card: '#252526',
-          border: '#333333',
-          accent: '#da7756',
-          hover: '#2a2d2e'
-        }
       }
     },
   },

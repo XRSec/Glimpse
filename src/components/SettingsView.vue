@@ -27,41 +27,60 @@
       <section class="p-6 rounded-2xl bg-[#24211e]/90 border border-[#383430] shadow-sm space-y-4">
         <div class="flex items-center justify-between pb-3 border-b border-[#383430]">
           <div class="flex items-center gap-2.5">
-            <ShieldCheck class="w-5 h-5 text-emerald-400" />
+            <ShieldCheck class="w-5 h-5" :class="accessibilityGranted && screenRecordingGranted ? 'text-emerald-400' : 'text-amber-400'" />
             <h2 class="text-sm font-bold text-[#fbfaf8]">macOS 系统级权限状态</h2>
           </div>
-          <span class="text-xs text-[#a8a29e]">已就绪</span>
+          <button
+            @click="checkPermissions"
+            :disabled="checking"
+            class="flex items-center gap-1.5 text-xs text-[#a8a29e] hover:text-[#fbfaf8] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw class="w-3.5 h-3.5" :class="checking ? 'animate-spin' : ''" />
+            <span>{{ checking ? '检查中...' : '重新检查' }}</span>
+          </button>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- 辅助功能权限 Accessibility -->
-          <div class="p-4 rounded-xl bg-[#191716] border border-[#383430] flex items-start gap-3.5">
-            <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-              <CheckCircle2 class="w-5 h-5" />
+          <div
+            class="p-4 rounded-xl bg-[#191716] border border-[#383430] flex items-start gap-3.5 cursor-pointer hover:border-[#4a4540] transition-colors"
+            @click="!accessibilityGranted && openAccessibilityPanel()"
+          >
+            <div class="p-2 rounded-lg shrink-0 border" :class="accessibilityGranted ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'">
+              <component :is="accessibilityGranted ? CheckCircle2 : XCircle" class="w-5 h-5" />
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between mb-1">
                 <span class="text-xs font-bold text-[#fbfaf8]">辅助功能权限 (Accessibility)</span>
-                <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">已授权</span>
+                <span
+                  class="text-[10px] px-2 py-0.5 rounded-full font-medium border"
+                  :class="accessibilityGranted == null ? 'bg-[#383430]/30 text-[#78716c] border-[#383430]' : accessibilityGranted ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'"
+                >{{ accessibilityGranted == null ? '检查中' : accessibilityGranted ? '已授权' : '未授权' }}</span>
               </div>
               <p class="text-[11px] text-[#a8a29e] leading-relaxed">
-                用于底层模拟光标移动、鼠标左键/双击/右键点击事件分发。
+                用于底层模拟光标移动、鼠标左键/双击/右键点击事件分发。{{ !accessibilityGranted && accessibilityGranted != null ? '点击前往授权 →' : '' }}
               </p>
             </div>
           </div>
 
           <!-- 屏幕录制权限 Screen Recording -->
-          <div class="p-4 rounded-xl bg-[#191716] border border-[#383430] flex items-start gap-3.5">
-            <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-              <CheckCircle2 class="w-5 h-5" />
+          <div
+            class="p-4 rounded-xl bg-[#191716] border border-[#383430] flex items-start gap-3.5 cursor-pointer hover:border-[#4a4540] transition-colors"
+            @click="!screenRecordingGranted && openScreenRecordingPanel()"
+          >
+            <div class="p-2 rounded-lg shrink-0 border" :class="screenRecordingGranted ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'">
+              <component :is="screenRecordingGranted ? CheckCircle2 : XCircle" class="w-5 h-5" />
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between mb-1">
                 <span class="text-xs font-bold text-[#fbfaf8]">屏幕录制权限 (Screen Recording)</span>
-                <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">已授权</span>
+                <span
+                  class="text-[10px] px-2 py-0.5 rounded-full font-medium border"
+                  :class="screenRecordingGranted == null ? 'bg-[#383430]/30 text-[#78716c] border-[#383430]' : screenRecordingGranted ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'"
+                >{{ screenRecordingGranted == null ? '检查中' : screenRecordingGranted ? '已授权' : '未授权' }}</span>
               </div>
               <p class="text-[11px] text-[#a8a29e] leading-relaxed">
-                用于捕捉当前运行区域画面，以供 Apple Vision 视觉神经网络精准识别文字。
+                用于捕捉当前运行区域画面，以供 Apple Vision 视觉神经网络精准识别文字。{{ !screenRecordingGranted && screenRecordingGranted != null ? '点击前往授权 →' : '' }}
               </p>
             </div>
           </div>
@@ -141,17 +160,47 @@
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import {
   ArrowLeft,
   ShieldCheck,
   CheckCircle2,
+  XCircle,
   Info,
   Cpu,
   Lock,
   Zap,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-vue-next';
 import { scriptStore } from '../stores/scriptStore';
+
+const accessibilityGranted = ref<boolean | null>(null);
+const screenRecordingGranted = ref<boolean | null>(null);
+const checking = ref(false);
+
+const checkPermissions = async () => {
+  checking.value = true;
+  try {
+    const [acc, scr] = await Promise.all([
+      invoke<boolean>('check_accessibility').catch(() => false),
+      invoke<boolean>('check_screen_recording').catch(() => false)
+    ]);
+    accessibilityGranted.value = acc;
+    screenRecordingGranted.value = scr;
+  } catch {
+    accessibilityGranted.value = false;
+    screenRecordingGranted.value = false;
+  } finally {
+    checking.value = false;
+  }
+};
+
+const openAccessibilityPanel = () => invoke('open_accessibility_panel').catch(() => {});
+const openScreenRecordingPanel = () => invoke('open_screen_recording_panel').catch(() => {});
+
+onMounted(checkPermissions);
 
 const handleBack = () => {
   scriptStore.currentView.value = 'list';

@@ -1,32 +1,54 @@
 <template>
   <div
-    class="rounded-xl border transition-all duration-200 overflow-hidden"
+    class="rounded-xl border transition-all duration-200 overflow-hidden relative"
     :class="[
       action.isEnabled
-        ? 'bg-[#24211e] border-[#383430] hover:border-[#4d4742]'
-        : 'bg-[#191716]/60 border-[#2a2623] opacity-60',
-      isCurrentRunning ? 'ring-2 ring-[#da7756] border-[#da7756]/80 shadow-lg shadow-[#da7756]/15' : ''
+        ? 'bg-claude-card border-claude-border hover:border-claude-border-hover'
+        : 'bg-claude-bg/60 border-claude-border/50 opacity-60',
+      isCurrentRunning ? 'ring-2 ring-claude-terracotta border-claude-terracotta/80 shadow-lg shadow-claude-terracotta/15' : '',
+      !isLast ? 'action-row-connected' : ''
     ]"
   >
     <!-- ================= 卡片头部栏 (点击空白处展开/折叠) ================= -->
     <div
-      class="px-4 py-2 flex items-center justify-between cursor-pointer transition-colors hover:bg-[#2c2825]/50"
+      class="px-4 py-2 flex items-center justify-between cursor-pointer transition-colors hover:bg-claude-card/50"
       @click="toggleExpand"
     >
-      <!-- 左侧：序号 + 类型图标 + 名称 + 摘要 -->
+      <!-- 左侧：拖拽手柄 + 序号 + 状态 + 类型图标 + 名称 + 摘要 -->
       <div class="flex items-center gap-2 min-w-0 flex-1 mr-3">
+        <!-- 拖拽手柄 -->
+        <div class="drag-handle cursor-grab active:cursor-grabbing p-0.5 -ml-1 text-claude-subtle hover:text-claude-muted shrink-0" @click.stop>
+          <GripVertical class="w-3.5 h-3.5" />
+        </div>
         <!-- 序号圆标 -->
         <span
           class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors"
           :class="[
             isCurrentRunning
-              ? 'bg-[#da7756] text-white animate-pulse'
+              ? 'bg-claude-terracotta text-white animate-pulse'
               : action.isEnabled
-              ? 'bg-[#2c2825] text-[#d5cdc4] border border-[#383430]'
-              : 'bg-[#1f1d1a] text-[#78716c] border border-[#2a2623]'
+              ? 'bg-claude-card text-claude-text border border-claude-border'
+              : 'bg-claude-bg text-claude-subtle border border-claude-border/50'
           ]"
         >
           {{ index + 1 }}
+        </span>
+
+        <!-- 执行状态图标 -->
+        <span v-if="stepStatus === 'running'" class="shrink-0" title="执行中">
+          <Loader2 class="w-3.5 h-3.5 text-claude-terracotta animate-spin" />
+        </span>
+        <span v-else-if="stepStatus === 'success'" class="shrink-0" title="成功">
+          <Check class="w-3.5 h-3.5 text-emerald-400" />
+        </span>
+        <span v-else-if="stepStatus === 'failed'" class="shrink-0" title="失败">
+          <X class="w-3.5 h-3.5 text-red-400" />
+        </span>
+        <span v-else-if="stepStatus === 'dry_run'" class="shrink-0" title="安全试运行">
+          <ShieldCheck class="w-3.5 h-3.5 text-sky-400" />
+        </span>
+        <span v-else-if="stepStatus === 'skipped'" class="shrink-0" title="已跳过">
+          <Minus class="w-3.5 h-3.5 text-claude-subtle" />
         </span>
 
         <!-- 类型图标 -->
@@ -43,13 +65,13 @@
             v-model="action.name"
             placeholder="标题"
             :style="{ width: `${Math.min(200, Math.max(56, ((action.name || '标题').length * 13 + 20)))}px` }"
-            class="px-2 py-0.5 text-xs rounded-lg bg-[#161619] border border-white/[0.1] text-zinc-100 placeholder-zinc-500 focus:border-[#da7756] focus:outline-none min-w-[56px] max-w-[200px] font-medium transition-[width] duration-150"
+            class="px-2 py-0.5 text-xs rounded-lg bg-claude-bg border border-claude-border text-claude-text placeholder-claude-subtle focus:border-claude-terracotta focus:outline-none min-w-[56px] max-w-[200px] font-medium transition-[width] duration-150"
             @click.stop
             title="动作标题/备注"
           />
         </template>
         <template v-else>
-          <span v-if="action.name" class="text-sm font-semibold text-[#fbfaf8] truncate">{{ action.name }}</span>
+          <span v-if="action.name" class="text-sm font-semibold text-claude-text truncate">{{ action.name }}</span>
         </template>
 
         <!-- 【点击文字（OCR）】 -->
@@ -60,13 +82,17 @@
           <span v-if="(action as ClickTextAction).targetText" class="text-xs text-amber-200 font-medium">“{{ (action as ClickTextAction).targetText }}”</span>
         </template>
         <template v-else-if="action.type === 'click_position'">
-          <span class="text-xs text-[#da7756] font-medium">({{ (action as ClickPositionAction).x }}, {{ (action as ClickPositionAction).y }})</span>
+          <span class="text-xs text-claude-terracotta font-medium">({{ (action as ClickPositionAction).x }}, {{ (action as ClickPositionAction).y }})</span>
         </template>
         <template v-else-if="action.type === 'drag_line'">
           <span class="text-xs text-emerald-300 font-medium">({{ (action as DragLineAction).startX }}, {{ (action as DragLineAction).startY }}) → ({{ (action as DragLineAction).endX }}, {{ (action as DragLineAction).endY }})</span>
         </template>
         <template v-else-if="action.type === 'input_text' || action.type === 'clear_and_input'">
           <span v-if="(action as InputAction).text" class="text-xs text-rose-300 font-medium truncate max-w-[140px]">“{{ (action as InputAction).text }}”</span>
+        </template>
+        <template v-else-if="action.type === 'send_key'">
+          <span v-if="(action as SendKeyAction).key" class="text-xs px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 font-mono font-medium">{{ (action as SendKeyAction).key }}</span>
+          <span v-if="((action as SendKeyAction).repeat ?? 1) > 1" class="text-[11px] text-zinc-400 font-mono">×{{ (action as SendKeyAction).repeat }}</span>
         </template>
         <template v-else-if="action.type === 'delay'">
           <span class="text-xs text-zinc-300">{{ (action as any).seconds }}s</span>
@@ -80,25 +106,34 @@
         <span class="text-xs text-zinc-400 font-normal shrink-0">等 {{ action.customWaitSeconds != null && action.customWaitSeconds !== undefined && !isNaN(Number(action.customWaitSeconds)) ? `${action.customWaitSeconds}s` : `${currentDefaultWait}s` }}</span>
 
         <!-- 【本地识别 限制区域】 -->
-        <span v-if="isRecognitionAction" class="text-[10px] px-2 py-0.5 rounded-full bg-[#da7756]/15 border border-[#da7756]/30 text-[#da7756] font-medium shrink-0 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-[#da7756]"></span><span>本地识别 限制区域</span></span>
+        <span v-if="isRecognitionAction" class="text-[10px] px-2 py-0.5 rounded-full bg-claude-terracotta/15 border border-claude-terracotta/30 text-claude-terracotta font-medium shrink-0 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-claude-terracotta"></span><span>本地识别 限制区域</span></span>
 
         <!-- 【限制区域/基于 XXX 限制】 -->
-        <span v-if="action.regionScope && getRegionScopeBadge(action.regionScope)" class="text-[10px] px-1.5 py-0.5 rounded bg-[#da7756]/15 border border-[#da7756]/30 text-[#da7756] font-medium shrink-0">{{ getRegionScopeBadge(action.regionScope) }}</span>
+        <span v-if="action.regionScope && getRegionScopeBadge(action.regionScope)" class="text-[10px] px-1.5 py-0.5 rounded bg-claude-terracotta/15 border border-claude-terracotta/30 text-claude-terracotta font-medium shrink-0">{{ getRegionScopeBadge(action.regionScope) }}</span>
       </div>
 
 
-      <!-- 右侧控制区：测试 + 启用 + 排序 + 删除 + 折叠展开 -->
+      <!-- 右侧控制区：耗时 + 测试 + 启用 + 排序 + 删除 + 折叠展开 -->
       <div class="flex items-center gap-2 shrink-0" @click.stop>
+        <!-- 步骤耗时 badge -->
+        <span
+          v-if="stepDuration"
+          class="text-[10px] px-1.5 py-0.5 rounded-md font-medium shrink-0 flex items-center gap-0.5"
+          :class="stepStatus === 'failed' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-white/[0.04] text-claude-muted border border-[#383430]'"
+        >
+          <Clock class="w-2.5 h-2.5" />
+          {{ stepDuration }}
+        </span>
         <!-- 单步测试按钮 (单独执行并调试本步骤) -->
         <button
           type="button"
           @click="handleTestStep"
           :disabled="isTestingStep"
-          class="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-[#2c2825] hover:bg-[#da7756]/20 text-[#d5cdc4] hover:text-[#da7756] border border-[#383430] transition-colors cursor-pointer active:scale-95 disabled:opacity-50"
+          class="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-claude-card hover:bg-claude-terracotta/20 text-claude-text hover:text-claude-terracotta border border-claude-border transition-colors cursor-pointer active:scale-95 disabled:opacity-50"
           title="单独执行并调试此步骤"
         >
-          <Loader2 v-if="isTestingStep" class="w-3 h-3 text-[#da7756] animate-spin" />
-          <Play v-else class="w-3 h-3 fill-current text-[#da7756]" />
+          <Loader2 v-if="isTestingStep" class="w-3 h-3 text-claude-terracotta animate-spin" />
+          <Play v-else class="w-3 h-3 fill-current text-claude-terracotta" />
           <span class="hidden sm:inline">{{ isTestingStep ? '测试中...' : '测试' }}</span>
         </button>
 
@@ -107,7 +142,7 @@
           type="button"
           @click="toggleEnabled"
           class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-          :class="action.isEnabled ? 'bg-[#da7756]' : 'bg-[#2c2825] border border-[#383430]'"
+          :class="action.isEnabled ? 'bg-claude-terracotta' : 'bg-claude-card border border-claude-border'"
           title="启用/禁用当前动作"
         >
           <span
@@ -121,7 +156,7 @@
           type="button"
           @click="$emit('move-up')"
           :disabled="isFirst"
-          class="p-1 rounded-md text-[#a8a29e] hover:text-[#fbfaf8] hover:bg-[#2c2825] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+          class="p-1 rounded-md text-claude-muted hover:text-claude-text hover:bg-claude-card disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
           title="上移"
         >
           <ChevronUp class="w-4 h-4" />
@@ -132,7 +167,7 @@
           type="button"
           @click="$emit('move-down')"
           :disabled="isLast"
-          class="p-1 rounded-md text-[#a8a29e] hover:text-[#fbfaf8] hover:bg-[#2c2825] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+          class="p-1 rounded-md text-claude-muted hover:text-claude-text hover:bg-claude-card disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
           title="下移"
         >
           <ChevronDown class="w-4 h-4" />
@@ -142,14 +177,14 @@
         <button
           type="button"
           @click="$emit('delete')"
-          class="p-1 rounded-md text-[#a8a29e] hover:text-red-400 hover:bg-[#2c2825] transition-colors cursor-pointer"
+          class="p-1 rounded-md text-claude-muted hover:text-red-400 hover:bg-claude-card transition-colors cursor-pointer"
           title="删除此动作"
         >
           <Trash2 class="w-4 h-4" />
         </button>
 
         <!-- 展开折叠箭头指示 -->
-        <div class="p-1 text-[#78716c]">
+        <div class="p-1 text-claude-subtle">
           <ChevronDown
             class="w-4 h-4 transition-transform duration-200"
             :class="{ 'rotate-180': action.isExpanded }"
@@ -161,12 +196,12 @@
     <!-- ================= 展开后的详细参数配置 ================= -->
     <div
       v-if="action.isExpanded"
-      class="px-5 py-3 border-t border-[#383430] bg-[#1c1a17]/50 space-y-3"
+      class="px-5 py-3 border-t border-claude-border bg-claude-surface/50 space-y-3"
     >
       <!-- 1. 动作分类类型 -->
       <div class="flex flex-col mb-1 w-64">
-        <label class="block text-xs font-medium text-[#a8a29e] mb-1">
-          更改动作分类类型 <span class="text-[#78716c] text-[11px]">(点击唤起完整动作库)</span>
+        <label class="block text-xs font-medium text-claude-muted mb-1">
+          更改动作分类类型 <span class="text-claude-subtle text-[11px]">(点击唤起完整动作库)</span>
         </label>
         <ActionCascadeMenu
           :model-value="action.type"
@@ -189,20 +224,20 @@
       />
 
       <!-- 4. 底部配置行：等待时间 + 失败重试 -->
-      <div class="pt-2 border-t border-[#383430] grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+      <div class="pt-2 border-t border-claude-border grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
         <div>
-          <label class="block text-[11px] text-[#a8a29e] mb-1">后置等待 (秒)</label>
+          <label class="block text-[11px] text-claude-muted mb-1">后置等待 (秒)</label>
           <input
             v-model.number="action.customWaitSeconds"
             type="number"
             step="0.1"
             min="0"
             placeholder="全局默认"
-            class="w-full px-2.5 py-1 text-xs rounded-lg bg-[#191716] border border-[#383430] text-[#fbfaf8] placeholder-[#78716c] focus:outline-none focus:border-[#da7756] font-mono"
+            class="w-full px-2.5 py-1 text-xs rounded-lg bg-claude-bg border border-claude-border text-claude-text placeholder-claude-subtle focus:outline-none focus:border-claude-terracotta font-mono"
           />
         </div>
         <div>
-          <label class="block text-[11px] text-[#a8a29e] mb-1">失败重试次数</label>
+          <label class="block text-[11px] text-claude-muted mb-1">失败重试次数</label>
           <input
             v-model.number="action.retryCount"
             type="number"
@@ -210,11 +245,11 @@
             min="0"
             max="20"
             placeholder="0"
-            class="w-full px-2.5 py-1 text-xs rounded-lg bg-[#191716] border border-[#383430] text-[#fbfaf8] placeholder-[#78716c] focus:outline-none focus:border-[#da7756] font-mono"
+            class="w-full px-2.5 py-1 text-xs rounded-lg bg-claude-bg border border-claude-border text-claude-text placeholder-claude-subtle focus:outline-none focus:border-claude-terracotta font-mono"
           />
         </div>
         <div>
-          <label class="block text-[11px] text-[#a8a29e] mb-1">重试间隔 (秒)</label>
+          <label class="block text-[11px] text-claude-muted mb-1">重试间隔 (秒)</label>
           <input
             v-model.number="action.retryWaitSeconds"
             type="number"
@@ -222,10 +257,10 @@
             min="0"
             placeholder="1.0"
             :disabled="!action.retryCount"
-            class="w-full px-2.5 py-1 text-xs rounded-lg bg-[#191716] border border-[#383430] text-[#fbfaf8] placeholder-[#78716c] focus:outline-none focus:border-[#da7756] font-mono disabled:opacity-40"
+            class="w-full px-2.5 py-1 text-xs rounded-lg bg-claude-bg border border-claude-border text-claude-text placeholder-claude-subtle focus:outline-none focus:border-claude-terracotta font-mono disabled:opacity-40"
           />
         </div>
-        <span class="text-[10px] text-[#78716c] pb-1">
+        <span class="text-[10px] text-claude-subtle pb-1">
           {{ action.retryCount ? `失败后重试 ${action.retryCount} 次 (间隔 ${action.retryWaitSeconds ?? 1.0}s)` : '失败不重试' }}
         </span>
       </div>
@@ -252,7 +287,13 @@ import {
   Play,
   Loader2,
   Crosshair,
-  Trash2
+  Trash2,
+  Check,
+  X,
+  ShieldCheck,
+  Minus,
+  Clock,
+  GripVertical
 } from 'lucide-vue-next';
 import ActionCascadeMenu from './ActionCascadeMenu.vue';
 import ActionLimitConfig from './ActionLimitConfig.vue';
@@ -265,6 +306,7 @@ import type {
   DragCurveAction,
   ScrollAction,
   InputAction,
+  SendKeyAction,
   ActionType
 } from '../types/script';
 import {
@@ -281,6 +323,9 @@ import {
 } from '../stores/scriptStore';
 import { maskStore } from '../stores/maskStore';
 import { automationController } from '../services/automationController';
+import {
+  stepResults, stepTimings, type StepStatus
+} from '../stores/scriptRunner';
 
 const props = defineProps<{
   action: ScriptAction;
@@ -385,6 +430,18 @@ const isCurrentRunning = computed(() => {
   );
 });
 
+const stepStatus = computed<StepStatus | null>(() => {
+  return stepResults.get(props.index) ?? null;
+});
+
+const stepDuration = computed(() => {
+  const t = stepTimings.get(props.index);
+  if (!t || !t.durationMs) return null;
+  const ms = t.durationMs;
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+});
+
 // 切换展开/收起
 const toggleExpand = () => {
   props.action.isExpanded = !props.action.isExpanded;
@@ -428,3 +485,15 @@ const pickMaskPoint = async (targetField: string) => {
   });
 };
 </script>
+
+<style scoped>
+.action-row-connected::after {
+  content: '';
+  position: absolute;
+  left: 1.65rem;
+  bottom: -0.625rem;
+  width: 1px;
+  height: 0.625rem;
+  background: #383430;
+}
+</style>

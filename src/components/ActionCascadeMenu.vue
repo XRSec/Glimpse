@@ -279,6 +279,12 @@ const categories = [
         label: '清空并输入',
         subLabel: '先全选删除原内容再输入',
         icon: Eraser
+      },
+      {
+        type: 'send_key' as ActionType,
+        label: '发送按键',
+        subLabel: '发送任意键盘按键或组合键 (如 Enter / D / Cmd+C)',
+        icon: Keyboard
       }
     ]
   },

@@ -225,10 +225,19 @@ int native_save_screenshot_rect(double x, double y, double w, double h, const ch
 }
 
 int native_check_accessibility(void) {
-    return AXIsProcessTrusted() ? 1 : 0;
+    if (!AXIsProcessTrusted()) {
+        return 0;
+    }
+    if (@available(macOS 10.15, *)) {
+        return CGPreflightPostEventAccess() ? 1 : 0;
+    }
+    return 1;
 }
 
 void native_open_accessibility_pref(void) {
+    if (@available(macOS 10.15, *)) {
+        CGRequestPostEventAccess();
+    }
     NSURL *url = [NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"];
     if (url) {
         [[NSWorkspace sharedWorkspace] openURL:url];

@@ -1,5 +1,5 @@
 <template>
-<header class="sticky top-0 z-30 px-8 py-4 border-b border-white/[0.08] bg-[#121215]/80 backdrop-blur-xl flex items-center justify-between shrink-0">
+<header class="sticky top-0 z-30 px-8 py-4 border-b border-claude-border bg-claude-header/80 backdrop-blur-xl flex items-center justify-between shrink-0">
       <!-- 左侧：返回按钮 + 页面标题 -->
       <div class="flex items-center gap-3">
         <button

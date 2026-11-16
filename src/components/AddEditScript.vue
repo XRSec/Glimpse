@@ -186,18 +186,27 @@
             </button>
           </div>
         </div>
-        <div v-else class="space-y-2">
-          <ActionRow
-            v-for="(act, idx) in script.actions"
-            :key="act.id"
-            :action="act"
-            :index="idx"
-            :is-first="idx === 0"
-            :is-last="idx === script.actions.length - 1"
-            @move-up="moveAction(idx, -1)"
-            @move-down="moveAction(idx, 1)"
-            @delete="removeAction(idx)"
-          />
+        <div v-else>
+          <draggable
+            :list="script.actions"
+            item-key="id"
+            handle=".drag-handle"
+            ghost-class="opacity-30"
+            animation="200"
+            class="space-y-3"
+          >
+            <template #item="{ element: act, index: idx }">
+              <ActionRow
+                :action="act"
+                :index="idx"
+                :is-first="idx === 0"
+                :is-last="idx === script.actions.length - 1"
+                @move-up="moveAction(idx, -1)"
+                @move-down="moveAction(idx, 1)"
+                @delete="removeAction(idx)"
+              />
+            </template>
+          </draggable>
           <div class="pt-3 flex items-center gap-3">
             <ActionCascadeMenu v-if="isWindowBound" placement="top-left" class="flex-1" @select="addNewAction">
               <template #trigger>
@@ -242,7 +251,7 @@
         </div>
       </section>
     </div>
-    <FloatingRunBar :script="script" :isWindowBound="isWindowBound" @run="handleRunCurrentScript" @stop="handleStopCurrentScript" />
+    <FloatingRunBar :script="script" :isWindowBound="isWindowBound" @run="handleRunCurrentScript" @stop="handleStopCurrentScript" @open-log="scrollToRunLog" />
     <div
       v-if="showOpenRegionModal"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200 p-4"
@@ -287,6 +296,7 @@ import ScriptHeader from './script/ScriptHeader.vue';
 import ScriptBasicSettings from './script/ScriptBasicSettings.vue';
 import ActionRow from './ActionRow.vue';
 import ActionCascadeMenu from './ActionCascadeMenu.vue';
+import draggable from 'vuedraggable';
 import AppPickerModal from './script/AppPickerModal.vue';
 import FloatingRunBar from './script/FloatingRunBar.vue';
 import RunLogPanel from './RunLogPanel.vue';
@@ -494,6 +504,10 @@ const handleRunCurrentScript = () => {
 };
 const handleStopCurrentScript = () => {
   scriptStore.stopScript();
+};
+const scrollToRunLog = () => {
+  const el = document.querySelector('.run-log-panel');
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 const handleConfirmOpenRegionAndRun = async () => {
   showOpenRegionModal.value = false;

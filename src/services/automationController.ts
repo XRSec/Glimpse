@@ -140,7 +140,8 @@ export const deriveActionROI = (
 export const searchTargetInROI = async (
   action: ScriptAction,
   roi: { x: number; y: number; width: number; height: number },
-  stepIndex: number = 0
+  stepIndex: number = 0,
+  executedStepCoordinates?: Record<number, { x: number; y: number }>
 ): Promise<LocateResult> => {
   if (isTauriEnv()) {
     await invoke('reset_execution_abort').catch(() => {});
@@ -198,7 +199,8 @@ export const searchTargetInROI = async (
         roiY: roi.y,
         roiW: roi.width,
         roiH: roi.height,
-        timeoutSeconds: act.timeoutSeconds ? Math.min(act.timeoutSeconds, 3.0) : 2.5
+        timeoutSeconds: act.timeoutSeconds || 2.5,
+        ocrImageScale: act.ocrImageScale ?? 1.0
       });
 
       const isFound = !!(res && res.success && res.x != null && res.y != null);
@@ -243,7 +245,14 @@ export const searchTargetInROI = async (
     const cp = action as ClickPositionAction;
     let targetX = cp.x;
     let targetY = cp.y;
-    if (cp.x <= maskStore.bounds.width + 50 && cp.y <= maskStore.bounds.height + 50) {
+    if (cp.regionScope?.baseType === 'step') {
+      const baseIdx = cp.regionScope.targetStepIndex ?? (stepIndex - 1);
+      const baseCoord = executedStepCoordinates?.[baseIdx] || maskStore.getBaseMarker(baseIdx);
+      if (baseCoord) {
+        targetX = Math.round(baseCoord.x + (cp.x || 0));
+        targetY = Math.round(baseCoord.y + (cp.y || 0));
+      }
+    } else if (cp.x <= maskStore.bounds.width + 50 && cp.y <= maskStore.bounds.height + 50) {
       targetX = Math.round(maskStore.bounds.x + cp.x);
       targetY = Math.round(maskStore.bounds.y + cp.y);
     }
@@ -496,7 +505,7 @@ export const testStepTarget = async (
   await new Promise((r) => setTimeout(r, 120));
 
   // 第 4 步：在限制区域截屏内调用 OCR / 图像识别
-  const searchRes = await searchTargetInROI(action, roi, stepIndex);
+  const searchRes = await searchTargetInROI(action, roi, stepIndex, executedStepCoordinates);
 
   // 第 5 步：未命中处理（限制框常驻屏幕，严禁清除）
   if (!searchRes.success || searchRes.x == null || searchRes.y == null) {
@@ -577,6 +586,14 @@ export const testStepTarget = async (
         const btn = (action as any).button || (action as any).buttonType || (action as any).clickType || 'left';
         log.info(`🖱️ 派发原生点击: 坐标 (${searchRes.x}, ${searchRes.y})，按键: ${btn}`);
         await invoke('click_position', { x: searchRes.x, y: searchRes.y, button: btn });
+      } else if (action.type === 'send_key') {
+        const keyStr = ((action as any).key || '').trim();
+        const repeat = Number((action as any).repeat) || 1;
+        if (!keyStr) {
+          return { success: false, message: '未配置目标按键' };
+        }
+        log.info(`⌨️ 派发原生按键: 「${keyStr}」 (×${repeat})`);
+        await invoke('send_key', { key: keyStr, repeat });
       }
     } catch (e: any) {
       log.error(`❌ 硬件点击失败: ${e?.message || e}`);

@@ -1,7 +1,7 @@
 <template>
-  <div class="h-full flex flex-col bg-[#0c0c0e] text-zinc-100 overflow-hidden font-sans">
+  <div class="h-full flex flex-col bg-claude-bg text-claude-text overflow-hidden font-sans">
     <!-- ================= 顶部状态栏与工具栏 ================= -->
-    <header class="px-8 py-5 border-b border-white/[0.08] bg-[#121215]/80 backdrop-blur-xl backdrop-blur-md flex items-center justify-between shrink-0">
+    <header class="px-8 py-5 border-b border-claude-border bg-claude-header/80 backdrop-blur-xl flex items-center justify-between shrink-0">
       <div class="flex items-center gap-3">
         <div class="p-2.5 rounded-2xl bg-[#da7756]/15 text-[#da7756] border border-[#da7756]/30 shadow-inner">
           <ScrollText class="w-6 h-6" />

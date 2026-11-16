@@ -1,5 +1,6 @@
 mod ocr;
 mod simulator;
+mod keyboard;
 mod cua_driver;
 
 use serde::{Deserialize, Serialize};
@@ -249,9 +250,11 @@ fn get_mask_screen_bounds(app: tauri::AppHandle) -> Result<serde_json::Value, St
 }
 
 #[tauri::command]
-fn click_position(x: f64, y: f64, button: Option<String>) -> Result<ClickResult, String> {
+async fn click_position(x: f64, y: f64, button: Option<String>) -> Result<ClickResult, String> {
     let btn = button.unwrap_or_else(|| "left".to_string());
-    simulator::click_at(x, y, &btn)?;
+    tokio::task::spawn_blocking(move || simulator::click_at(x, y, &btn))
+        .await
+        .map_err(|e| e.to_string())??;
     Ok(ClickResult {
         success: true,
         message: format!("已成功点击坐标 ({:.0}, {:.0})", x, y),
@@ -260,9 +263,11 @@ fn click_position(x: f64, y: f64, button: Option<String>) -> Result<ClickResult,
 }
 
 #[tauri::command]
-fn drag_line(x1: f64, y1: f64, x2: f64, y2: f64, duration: Option<f64>) -> Result<ClickResult, String> {
+async fn drag_line(x1: f64, y1: f64, x2: f64, y2: f64, duration: Option<f64>) -> Result<ClickResult, String> {
     let d = duration.unwrap_or(0.5);
-    simulator::drag_line(x1, y1, x2, y2, d)?;
+    tokio::task::spawn_blocking(move || simulator::drag_line(x1, y1, x2, y2, d))
+        .await
+        .map_err(|e| e.to_string())??;
     Ok(ClickResult {
         success: true,
         message: format!("已从 ({:.0}, {:.0}) 直线拖动到 ({:.0}, {:.0})", x1, y1, x2, y2),
@@ -271,9 +276,11 @@ fn drag_line(x1: f64, y1: f64, x2: f64, y2: f64, duration: Option<f64>) -> Resul
 }
 
 #[tauri::command]
-fn drag_curve(x1: f64, y1: f64, cx: f64, cy: f64, x2: f64, y2: f64, duration: Option<f64>) -> Result<ClickResult, String> {
+async fn drag_curve(x1: f64, y1: f64, cx: f64, cy: f64, x2: f64, y2: f64, duration: Option<f64>) -> Result<ClickResult, String> {
     let d = duration.unwrap_or(0.8);
-    simulator::drag_curve(x1, y1, cx, cy, x2, y2, d)?;
+    tokio::task::spawn_blocking(move || simulator::drag_curve(x1, y1, cx, cy, x2, y2, d))
+        .await
+        .map_err(|e| e.to_string())??;
     Ok(ClickResult {
         success: true,
         message: format!("已沿曲线从 ({:.0}, {:.0}) 拖动到 ({:.0}, {:.0})", x1, y1, x2, y2),
@@ -282,12 +289,29 @@ fn drag_curve(x1: f64, y1: f64, cx: f64, cy: f64, x2: f64, y2: f64, duration: Op
 }
 
 #[tauri::command]
-fn scroll_wheel(direction: String, distance: i32, x: Option<f64>, y: Option<f64>) -> Result<ClickResult, String> {
-    simulator::scroll(&direction, distance, x, y)?;
+async fn scroll_wheel(direction: String, distance: i32, x: Option<f64>, y: Option<f64>) -> Result<ClickResult, String> {
+    let dir = direction.clone();
+    tokio::task::spawn_blocking(move || simulator::scroll(&dir, distance, x, y))
+        .await
+        .map_err(|e| e.to_string())??;
     Ok(ClickResult {
         success: true,
         message: format!("已向{}滚动 {} 步", if direction == "down" { "下" } else { "上" }, distance),
         x, y, width: None, height: None,
+    })
+}
+
+#[tauri::command]
+async fn send_key(key: String, repeat: Option<u32>) -> Result<ClickResult, String> {
+    let k = key.clone();
+    let count = repeat.unwrap_or(1);
+    tokio::task::spawn_blocking(move || keyboard::send_key(&k, count))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(ClickResult {
+        success: true,
+        message: format!("已发送按键「{}」", key),
+        x: None, y: None, width: None, height: None,
     })
 }
 
@@ -384,9 +408,12 @@ fn find_text_position(
     roi_x: Option<f64>, roi_y: Option<f64>, roi_w: Option<f64>, roi_h: Option<f64>,
     roiX: Option<f64>, roiY: Option<f64>, roiW: Option<f64>, roiH: Option<f64>,
     timeout_seconds: Option<f64>,
+    #[allow(non_snake_case)] ocrImageScale: Option<f64>,
+    ocr_image_scale: Option<f64>,
 ) -> Result<ClickResult, String> {
     let fuzzy = is_fuzzy.unwrap_or(true);
     let timeout = timeout_seconds.unwrap_or(2.5);
+    let _scale = ocrImageScale.or(ocr_image_scale).unwrap_or(1.0);
     let rx = roi_x.or(roiX);
     let ry = roi_y.or(roiY);
     let rw = roi_w.or(roiW);
@@ -661,6 +688,7 @@ pub fn run() {
             drag_line,
             drag_curve,
             scroll_wheel,
+            send_key,
             check_accessibility,
             open_accessibility_panel,
             check_screen_recording,

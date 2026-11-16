@@ -450,6 +450,8 @@ export const createDefaultAction = (type: ActionType): ScriptAction => {
       return { ...base, name: '', type: 'drag_curve', startX: 100, startY: 100, controlX: 200, controlY: 150, endX: 300, endY: 300, durationSeconds: 0.8 };
     case 'scroll':
       return { ...base, name: '', type: 'scroll', direction: 'down', distance: 3 };
+    case 'send_key':
+      return { ...base, name: '', type: 'send_key', key: 'Enter', repeat: 1 };
     case 'delay':
       return { ...base, name: '', type: 'delay', seconds: 1.0 };
     default:

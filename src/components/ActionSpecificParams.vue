@@ -297,6 +297,66 @@
       ></textarea>
     </div>
 
+    <!-- 7.1 发送按键 (send_key) -->
+    <div v-else-if="action.type === 'send_key'" class="p-2.5 rounded-lg bg-[#211f1c] border border-[#383430] space-y-2.5">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs font-medium text-[#d5cdc4]">目标按键 / 组合键</span>
+        <button
+          type="button"
+          @click="toggleKeyCapture"
+          :class="[
+            'px-2.5 py-1 text-[11px] rounded-md border font-medium transition-colors cursor-pointer flex items-center gap-1.5',
+            isCapturingKey
+              ? 'bg-rose-500/20 border-rose-500 text-rose-300 animate-pulse'
+              : 'bg-[#191716] border-[#383430] text-[#d5cdc4] hover:border-rose-500/60'
+          ]"
+        >
+          <Keyboard class="w-3.5 h-3.5" />
+          {{ isCapturingKey ? '请按下键盘按键 (Esc取消)...' : '键盘录制按键' }}
+        </button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2">
+        <div class="col-span-2">
+          <input
+            v-model="(action as SendKeyAction).key"
+            type="text"
+            placeholder="如 Enter / D / K / Space / Cmd+C"
+            class="w-full px-3 py-1.5 text-xs rounded-lg bg-[#191716] border border-[#383430] text-[#fbfaf8] placeholder-[#78716c] focus:outline-none focus:border-rose-500 font-mono"
+          />
+        </div>
+        <div class="relative">
+          <input
+            v-model.number="(action as SendKeyAction).repeat"
+            type="number"
+            min="1"
+            max="50"
+            placeholder="1"
+            class="w-full px-3 py-1.5 pr-8 text-xs rounded-lg bg-[#191716] border border-[#383430] text-[#fbfaf8] focus:outline-none focus:border-rose-500 font-mono"
+          />
+          <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[#78716c]">次</span>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="text-[11px] text-[#78716c] mr-0.5">常用:</span>
+        <button
+          v-for="preset in keyPresets"
+          :key="preset.value"
+          type="button"
+          @click="(action as SendKeyAction).key = preset.value"
+          :class="[
+            'px-2 py-0.5 text-[11px] rounded border font-mono transition-colors cursor-pointer',
+            (action as SendKeyAction).key === preset.value
+              ? 'bg-rose-500/20 border-rose-500/60 text-rose-300'
+              : 'bg-[#191716] border-[#383430] text-[#a8a29e] hover:text-[#fbfaf8] hover:border-[#524b44]'
+          ]"
+        >
+          {{ preset.label }}
+        </button>
+      </div>
+    </div>
+
     <!-- 8. 打开应用 / 网址 / 文件 -->
     <div v-else-if="action.type === 'open_app' || action.type === 'open_url' || action.type === 'open_file'" class="p-2.5 rounded-lg bg-[#211f1c] border border-[#383430] space-y-2">
       <label class="block text-xs font-medium text-[#d5cdc4]">
@@ -329,7 +389,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, onUnmounted } from 'vue';
 import HelpTip from './common/HelpTip.vue';
 
 const clampOcrScale = () => {
@@ -342,13 +402,14 @@ const clampOcrScale = () => {
   }
 };
 
-import { Crosshair, ArrowUpRight, Spline, Mouse } from 'lucide-vue-next';
+import { Crosshair, ArrowUpRight, Spline, Mouse, Keyboard } from 'lucide-vue-next';
 import type {
   ScriptAction,
   ClickPositionAction,
   ClickTextAction,
   ScrollAction,
   InputAction,
+  SendKeyAction,
   OpenAction,
   RunScriptAction,
   DelayAction
@@ -395,4 +456,70 @@ const handlePickPoint = async (targetField: string) => {
 };
 
 const actionTitle = computed(() => props.action.name || props.action.type);
+
+const keyPresets = [
+  { label: 'Enter', value: 'Enter' },
+  { label: 'Esc', value: 'Esc' },
+  { label: 'Space', value: 'Space' },
+  { label: 'Tab', value: 'Tab' },
+  { label: 'Backspace', value: 'Backspace' },
+  { label: '↑', value: 'Up' },
+  { label: '↓', value: 'Down' },
+  { label: '←', value: 'Left' },
+  { label: '→', value: 'Right' },
+  { label: 'D', value: 'D' },
+  { label: 'K', value: 'K' }
+];
+
+const isCapturingKey = ref(false);
+const mapBrowserKeyToName = (e: KeyboardEvent): string | null => {
+  const modOnly = ['Meta', 'Control', 'Alt', 'Shift', 'CapsLock'];
+  if (modOnly.includes(e.key)) return null;
+
+  const mods: string[] = [];
+  if (e.metaKey) mods.push('Cmd');
+  if (e.ctrlKey) mods.push('Ctrl');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+
+  let base = e.key;
+  if (base === ' ') base = 'Space';
+  else if (base === 'ArrowUp') base = 'Up';
+  else if (base === 'ArrowDown') base = 'Down';
+  else if (base === 'ArrowLeft') base = 'Left';
+  else if (base === 'ArrowRight') base = 'Right';
+  else if (base.length === 1) base = base.toUpperCase();
+
+  return mods.length > 0 ? `${mods.join('+')}+${base}` : base;
+};
+
+const onKeyCaptureDown = (e: KeyboardEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+    stopKeyCapture();
+    return;
+  }
+  const captured = mapBrowserKeyToName(e);
+  if (captured) {
+    (props.action as SendKeyAction).key = captured;
+    stopKeyCapture();
+  }
+};
+
+const stopKeyCapture = () => {
+  isCapturingKey.value = false;
+  window.removeEventListener('keydown', onKeyCaptureDown, true);
+};
+
+const toggleKeyCapture = () => {
+  if (isCapturingKey.value) {
+    stopKeyCapture();
+  } else {
+    isCapturingKey.value = true;
+    window.addEventListener('keydown', onKeyCaptureDown, true);
+  }
+};
+
+onUnmounted(stopKeyCapture);
 </script>

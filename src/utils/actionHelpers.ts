@@ -6,6 +6,7 @@ import {
   Spline,
   Mouse,
   PenTool,
+  Keyboard,
   ExternalLink,
   Terminal,
   Eye,
@@ -31,6 +32,7 @@ export const getActionDefaultTitle = (type: ActionType): string => {
     case 'input_text': return '输入文本';
     case 'paste_clipboard': return '粘贴剪贴板';
     case 'clear_and_input': return '清空并输入';
+    case 'send_key': return '发送按键';
     case 'open_app': return '打开应用';
     case 'open_url': return '打开网址';
     case 'open_file': return '打开文件';
@@ -56,6 +58,7 @@ export const getActionIcon = (type: ActionType): Component => {
     case 'scroll': return Mouse;
     case 'input_text':
     case 'clear_and_input': return PenTool;
+    case 'send_key': return Keyboard;
     case 'open_app':
     case 'open_url': return ExternalLink;
     case 'run_shell':
@@ -76,7 +79,7 @@ export const getActionIconBadgeClass = (type: ActionType): string => {
   if (type === 'drag_line') return 'bg-emerald-500/15 text-emerald-400';
   if (type === 'drag_curve') return 'bg-purple-500/15 text-purple-400';
   if (type === 'scroll') return 'bg-cyan-500/15 text-cyan-400';
-  if (type.startsWith('input_') || type === 'clear_and_input') return 'bg-rose-500/15 text-rose-400';
+  if (type === 'send_key' || type.startsWith('input_') || type === 'clear_and_input') return 'bg-rose-500/15 text-rose-400';
   return 'bg-[#da7756]/15 text-[#da7756]';
 };
 
@@ -87,7 +90,7 @@ export const getActionCategoryLabel = (type: ActionType): string => {
   if (type.startsWith('click_')) return '点击';
   if (type.startsWith('identify_')) return '识别';
   if (type.startsWith('drag_') || type === 'scroll') return '拖动';
-  if (type.startsWith('input_') || type === 'paste_clipboard' || type === 'clear_and_input') return '输入';
+  if (type === 'send_key' || type.startsWith('input_') || type === 'paste_clipboard' || type === 'clear_and_input') return '输入';
   if (type.startsWith('open_')) return '打开';
   if (type.startsWith('run_')) return '运行';
   if (type.startsWith('wait_') || type === 'save_screenshot') return '界面';

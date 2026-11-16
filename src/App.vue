@@ -11,7 +11,7 @@
   <div
     v-else
     id="main-scroll-container"
-    class="w-full bg-[#0c0c0e] text-zinc-100 text-[#fbfaf8] font-sans relative"
+    class="w-full bg-claude-bg text-claude-text font-sans relative"
     style="height: 100vh; max-height: 100vh; overflow-y: auto !important; overflow-x: hidden;"
   >
     <component :is="activeComponent" />

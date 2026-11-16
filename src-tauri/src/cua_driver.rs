@@ -54,20 +54,36 @@ fn call_tool(proc: &mut CuaMcpProcess, tool: &str, args: Value) -> Result<Value,
         "arguments": args
     }))?;
 
+    if let Some(err) = resp.get("error") {
+        let msg = err.get("message").and_then(|v| v.as_str()).unwrap_or("cua-driver RPC error");
+        return Err(msg.to_string());
+    }
+
+    let is_error = resp.pointer("/result/isError").and_then(|v| v.as_bool()).unwrap_or(false);
     let contents = resp.pointer("/result/content")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
 
+    let mut first_text: Option<String> = None;
     for c in &contents {
         if c.get("type").and_then(|v| v.as_str()) == Some("text") {
             if let Some(text) = c.get("text").and_then(|v| v.as_str()) {
-                if let Ok(parsed) = serde_json::from_str::<Value>(text) {
-                    return Ok(parsed);
+                if first_text.is_none() {
+                    first_text = Some(text.to_string());
                 }
-                return Ok(json!(text));
+                if !is_error {
+                    if let Ok(parsed) = serde_json::from_str::<Value>(text) {
+                        return Ok(parsed);
+                    }
+                    return Ok(json!(text));
+                }
             }
         }
+    }
+
+    if is_error {
+        return Err(first_text.unwrap_or_else(|| format!("cua-driver tool '{}' returned error", tool)));
     }
     Ok(resp.get("result").cloned().unwrap_or(json!(null)))
 }
