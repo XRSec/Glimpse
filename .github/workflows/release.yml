@@ -77,11 +77,18 @@ jobs:
             exit 0
           fi
 
-          # 3. 检查 GitHub 上该版本号对应的 Release 是否已存在
+          # 3. 检查 GitHub 上该版本号对应的 Release 是否已存在（忽略无产物的空草稿 Release）
           CHECK_TAG="v${LOCAL_VER}"
           TAG_EXISTS="false"
-          if gh release view "$CHECK_TAG" >/dev/null 2>&1; then
-            TAG_EXISTS="true"
+          if RELEASE_JSON=$(gh release view "$CHECK_TAG" --json isDraft,assets 2>/dev/null); then
+            IS_DRAFT=$(echo "$RELEASE_JSON" | jq -r '.isDraft')
+            ASSET_COUNT=$(echo "$RELEASE_JSON" | jq -r '.assets | length')
+            if [ "$IS_DRAFT" = "true" ] && [ "$ASSET_COUNT" -eq 0 ]; then
+              echo "ℹ️ 检测到空的草稿 Release $CHECK_TAG（无产物），允许重新构建。"
+              TAG_EXISTS="false"
+            else
+              TAG_EXISTS="true"
+            fi
           fi
 
           ONLINE_TAG=$(gh release view --json tagName --jq '.tagName // empty' 2>/dev/null || echo "")
@@ -202,20 +209,43 @@ jobs:
       - name: Install Node dependencies
         run: pnpm install
 
+      - name: Configure Apple Signing Env
+        env:
+          _APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          _APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          _APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          _APPLE_ID: ${{ secrets.APPLE_ID }}
+          _APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          _APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          _APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          _APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          _APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+        run: |
+          write_env() {
+            local name="$1"
+            local val="$2"
+            if [ -n "$val" ]; then
+              {
+                echo "${name}<<__GH_ENV_EOF__"
+                printf '%s\n' "$val"
+                echo "__GH_ENV_EOF__"
+              } >> "$GITHUB_ENV"
+            fi
+          }
+          write_env APPLE_CERTIFICATE "$_APPLE_CERTIFICATE"
+          write_env APPLE_CERTIFICATE_PASSWORD "$_APPLE_CERTIFICATE_PASSWORD"
+          write_env APPLE_SIGNING_IDENTITY "$_APPLE_SIGNING_IDENTITY"
+          write_env APPLE_ID "$_APPLE_ID"
+          write_env APPLE_PASSWORD "$_APPLE_PASSWORD"
+          write_env APPLE_TEAM_ID "$_APPLE_TEAM_ID"
+          write_env APPLE_API_KEY "$_APPLE_API_KEY"
+          write_env APPLE_API_ISSUER "$_APPLE_API_ISSUER"
+          write_env APPLE_API_KEY_PATH "$_APPLE_API_KEY_PATH"
+
       - name: Build, Sign and Release with Tauri Action
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS 代码签名与公证（在仓库 Secrets 配置后自动启用）
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
         with:
           tagName: ${{ needs.version-gate.outputs.tag_name }}
           releaseName: "Glimpse ${{ needs.version-gate.outputs.tag_name }}"
